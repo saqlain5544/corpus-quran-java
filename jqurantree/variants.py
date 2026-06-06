@@ -92,9 +92,10 @@ def _dl_tanzil(v: Variant, dest: Path) -> Path:
 
 
 def _dl_api(v: Variant, dest: Path) -> Path:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     dir_name = v.api_edition.replace("_", "-")
-    all_verses: list[str] = []
-    for ch in range(1, 115):
+
+    def fetch_chapter(ch: int) -> list[str]:
         url = f"{_GITHUB_BASE}/{dir_name}/{ch}.json"
         for _ in range(3):
             try:
@@ -104,10 +105,18 @@ def _dl_api(v: Variant, dest: Path) -> Path:
                         data = json.loads(resp.read().decode())
                         ch_data = data.get("chapter", data)
                         if isinstance(ch_data, list):
-                            all_verses.extend(item.get("text", "") for item in ch_data)
+                            return [item.get("text", "") for item in ch_data]
                         break
             except Exception:
                 time.sleep(1)
+        return []
+
+    all_verses: list[str] = []
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futures = {ex.submit(fetch_chapter, ch): ch for ch in range(1, 115)}
+        for future in as_completed(futures):
+            all_verses.extend(future.result())
+
     data_out = {str(i + 1): verse for i, verse in enumerate(all_verses)}
     with open(dest, "w", encoding="utf-8") as f:
         json.dump(data_out, f, ensure_ascii=False)

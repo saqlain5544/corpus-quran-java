@@ -28,6 +28,7 @@ from .rasm import normalize_rasm, rasm_cost, needleman_wunsch, word_cost
 from .reader import Reader, Translations
 from .alignment_index import Alignment, WordMap
 from .quran import Quran, WordAnalysis
+from .parallel import pmap, parallel_surahs, cpu_count as parallel_cpu_count
 
 __version__ = "4.0.0"
 
@@ -47,4 +48,5 @@ __all__ = [
     "normalize_rasm", "rasm_cost", "needleman_wunsch", "word_cost",
     "Reader", "Translations",
     "Alignment", "WordMap", "Quran", "WordAnalysis",
+    "pmap", "parallel_surahs", "parallel_cpu_count",
 ]
