@@ -81,37 +81,29 @@ class Morphology:
                 self._by_word.setdefault(key, []).append(seg)
 
     def __len__(self) -> int: return len(self._segments)
+    def __iter__(self): return iter(self._segments)
 
-    def word(self, sura: int, verse: int, word_num: int) -> list[Segment]:
-        return self._by_word.get((sura, verse, word_num), [])
+    @lru_cache(maxsize=1)
+    def roots(self) -> dict[str, list[str]]:
+        import json
+        path = _DATA_DIR / "corpus-roots.json"
+        if not path.exists():
+            return {}
+        with open(path) as f:
+            data = json.load(f)
+        result: dict[str, list[str]] = {}
+        for root, refs in data.items():
+            if isinstance(refs, list):
+                result[root] = refs
+        return result
 
-    def verse(self, sura: int, verse: int) -> list[Segment]:
-        return [s for s in self._segments if s.sura == sura and s.verse == verse]
-
-    def surah(self, sura: int) -> list[Segment]:
-        return [s for s in self._segments if s.sura == sura]
-
-    def by_pos(self, pos: str) -> list[Segment]:
-        return self._by_pos.get(pos, [])
-
-    def gloss(self, sura: int, verse: int, word: int) -> str:
-        segs = self.word(sura, verse, word)
-        if not segs: return ""
-        stems = [s.gloss for s in segs if s.is_stem]
-        return " + ".join(stems) if stems else segs[0].gloss
-
-    def search_gloss(self, term: str, case_sensitive: bool = False) -> list[Segment]:
-        t = term if case_sensitive else term.lower()
-        return [s for s in self._segments
-                if (t in s.gloss if case_sensitive else t in s.gloss.lower())]
-
-    def word_count(self) -> int: return len(self._by_word)
-
-    def segment_count(self) -> int: return len(self._segments)
-
-    def pos_distribution(self) -> dict[str, int]:
-        from collections import Counter
-        return dict(Counter(s.pos for s in self._segments).most_common(20))
+    def root_for(self, sura: int, verse: int, word: int) -> str:
+        roots_data = self.roots()
+        ref = f"{sura}:{verse}:{word}"
+        for root, refs in roots_data.items():
+            if ref in refs:
+                return root
+        return ""
 
     def lemma_map(self) -> dict[tuple[int, int, int], dict]:
         result: dict[tuple[int, int, int], dict] = {}
