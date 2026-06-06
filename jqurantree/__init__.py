@@ -29,6 +29,7 @@ from .reader import Reader, Translations
 from .alignment_index import Alignment, WordMap
 from .quran import Quran, WordAnalysis
 from .parallel import pmap, parallel_surahs, cpu_count as parallel_cpu_count
+from .validator import validate_all_variants, validate_variant, EncodingReport, classify as classify_char
 
 __version__ = "4.0.0"
 
@@ -49,4 +50,5 @@ __all__ = [
     "Reader", "Translations",
     "Alignment", "WordMap", "Quran", "WordAnalysis",
     "pmap", "parallel_surahs", "parallel_cpu_count",
+    "validate_all_variants", "validate_variant", "EncodingReport", "classify_char",
 ]
