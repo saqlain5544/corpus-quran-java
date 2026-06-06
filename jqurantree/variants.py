@@ -226,16 +226,18 @@ def diff_variants_lemmas(key_a: str, key_b: str) -> dict:
 
     _diacritics = frozenset({
         0x064B, 0x064C, 0x064D, 0x064E, 0x064F, 0x0650, 0x0651, 0x0652,
-        0x0670, 0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2, 0x06E3,
+        0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2, 0x06E3,
         0x06E5, 0x06E6, 0x06E8, 0x06EA, 0x06EB, 0x06EC, 0x06ED,
         0x0615, 0x06D6, 0x06D7, 0x06D8, 0x06D9, 0x06DA, 0x06DB,
     })
 
     def _normalize_word(w: str) -> str:
+        w = w.replace("\u0670", "")
         w = "".join(ch for ch in w if ord(ch) not in _diacritics)
         w = unicodedata.normalize("NFC", w)
-        w = w.replace("\u0671", "\u0627").replace("\u0670", "\u0627")
+        w = w.replace("\u0671", "\u0627")
         w = w.replace("\u0649", "\u064A")
+        w = w.replace("\u06E1", "")
         return w
 
     for cn in range(1, 115):
