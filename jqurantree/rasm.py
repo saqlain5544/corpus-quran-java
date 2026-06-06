@@ -103,6 +103,26 @@ def rasm_cost(a_char: str, b_char: str, prev_a: str = "", prev_b: str = "") -> f
         return 0.0
     if b_char in ("\u0623", "\u0625") and a_char == "\u0627":
         return 0.0
+
+    # Tatweel → free (kashida is purely cosmetic)
+    if a_char == "\u0640" or b_char == "\u0640":
+        return 0.0
+
+    # Hamza ↔ Alif (standalone hamza in Uthmani maps to alif in Simple)
+    if {a_char, b_char} == {"\u0621", "\u0627"}:
+        return 0.0
+
+    # Hamza ↔ Ya in word-final position (رءا→راي)
+    if {a_char, b_char} == {"\u0621", "\u064A"}:
+        return 0.15
+
+    # Final Alif ↔ Ya interchange (طغا→طغي، لدا→لدي)
+    if {a_char, b_char} == {"\u0627", "\u064A"} and prev_a and prev_b:
+        return 0.15
+
+    # Alif ↔ Waw in certain positions (الصلوه→الصلاه)
+    if {a_char, b_char} == {"\u0627", "\u0648"}:
+        return 0.15
     
     # Waw + dagger alif → Alif pattern
     # "وٰ" → "ا" (the waw+dagger in Uthmani = alif in modern)
