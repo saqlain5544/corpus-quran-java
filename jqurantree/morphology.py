@@ -112,3 +112,36 @@ class Morphology:
     def pos_distribution(self) -> dict[str, int]:
         from collections import Counter
         return dict(Counter(s.pos for s in self._segments).most_common(20))
+
+    def lemma_map(self) -> dict[tuple[int, int, int], dict]:
+        result: dict[tuple[int, int, int], dict] = {}
+        for seg in self._segments:
+            if seg.is_stem:
+                key = (seg.sura, seg.verse, seg.word)
+                if key not in result or seg.pos not in ("DET", "PREP", "CONJ", "NEG_PART"):
+                    result[key] = {
+                        "lemma": seg.without_diacritics,
+                        "gloss": seg.gloss,
+                        "pos": seg.pos,
+                        "segment": seg.segmented_text,
+                    }
+        return result
+
+    def verse_lemmas(self, sura: int, verse: int) -> list[str]:
+        lemmas: list[str] = []
+        seen_words: set[int] = set()
+        for seg in self._segments:
+            if seg.sura == sura and seg.verse == verse:
+                if seg.word not in seen_words and seg.is_stem:
+                    lemmas.append(seg.gloss)
+                    seen_words.add(seg.word)
+        return lemmas
+
+    def surah_lemmas(self, sura: int) -> dict[int, list[str]]:
+        result: dict[int, list[str]] = {}
+        for seg in self._segments:
+            if seg.sura == sura and seg.is_stem:
+                result.setdefault(seg.verse, [])
+                if seg.word not in {s.word for s in self._by_word.get((sura, seg.verse, seg.word), []) if s.is_stem and s.segment < seg.segment}:
+                    result[seg.verse].append(seg.gloss)
+        return result

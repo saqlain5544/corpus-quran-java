@@ -21,7 +21,7 @@ from .alignment import Align, align
 from .model import Document, Chapter, Verse, Token, Location
 from .tanzil import parse_xml, download_tanzil, DownloadError
 from .search import TokenSearch, AnalysisTable
-from .variants import VARIANTS, Variant, download_variant, load_variant, diff_variants, DiffResult, VerseDiff
+from .variants import VARIANTS, Variant, download_variant, load_variant, diff_variants, diff_variants_lemmas, DiffResult, VerseDiff
 from .morphology import Morphology, Segment
 from .errors import JQuranTreeError, ErrorCode
 
@@ -37,7 +37,7 @@ __all__ = [
     "parse_xml", "download_tanzil", "DownloadError",
     "TokenSearch", "AnalysisTable",
     "VARIANTS", "Variant", "download_variant", "load_variant", "diff_variants",
-    "DiffResult", "VerseDiff",
+    "diff_variants_lemmas", "DiffResult", "VerseDiff",
     "Morphology", "Segment",
     "JQuranTreeError", "ErrorCode",
 ]

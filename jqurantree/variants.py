@@ -205,3 +205,73 @@ def diff_variants(key_a: str, key_b: str, cfg: Align | None = None) -> DiffResul
             "different": sum(1 for v in verses if not v.get("identical")),
         })
     return result
+
+
+def diff_variants_lemmas(key_a: str, key_b: str) -> dict:
+    """Compare variants at the lemma level — unique word sets per verse.
+    Returns: how many verses share the same word set (after diacritic removal + normalization)."""
+    from .morphology import Morphology
+    import unicodedata
+
+    data_a = load_variant(key_a)
+    data_b = load_variant(key_b)
+
+    sura_map_a = {s["number"]: s for s in data_a["suras"]}
+    sura_map_b = {s["number"]: s for s in data_b["suras"]}
+
+    total_verses = 0
+    same_words = 0
+    diff_words = 0
+    examples: list[dict] = []
+
+    _diacritics = frozenset({
+        0x064B, 0x064C, 0x064D, 0x064E, 0x064F, 0x0650, 0x0651, 0x0652,
+        0x0670, 0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2, 0x06E3,
+        0x06E5, 0x06E6, 0x06E8, 0x06EA, 0x06EB, 0x06EC, 0x06ED,
+        0x0615, 0x06D6, 0x06D7, 0x06D8, 0x06D9, 0x06DA, 0x06DB,
+    })
+
+    def _normalize_word(w: str) -> str:
+        w = "".join(ch for ch in w if ord(ch) not in _diacritics)
+        w = unicodedata.normalize("NFC", w)
+        w = w.replace("\u0671", "\u0627").replace("\u0670", "\u0627")
+        w = w.replace("\u0649", "\u064A")
+        return w
+
+    for cn in range(1, 115):
+        sa = sura_map_a[cn]
+        sb = sura_map_b[cn]
+        for an in range(1, max(len(sa["ayas"]), len(sb["ayas"])) + 1):
+            total_verses += 1
+
+            a_text = sa["ayas"][an - 1]["text"] if an <= len(sa["ayas"]) else ""
+            b_text = sb["ayas"][an - 1]["text"] if an <= len(sb["ayas"]) else ""
+
+            a_words = set(_normalize_word(w) for w in a_text.split() if len(_normalize_word(w)) > 1)
+            b_words = set(_normalize_word(w) for w in b_text.split() if len(_normalize_word(w)) > 1)
+
+            only_a = a_words - b_words
+            only_b = b_words - a_words
+
+            if not only_a and not only_b:
+                same_words += 1
+            else:
+                diff_words += 1
+                if len(examples) < 5 and (only_a or only_b):
+                    examples.append({
+                        "chapter": cn, "verse": an,
+                        "only_in_a": sorted(only_a)[:5],
+                        "only_in_b": sorted(only_b)[:5],
+                        "a_text": a_text[:100],
+                        "b_text": b_text[:100],
+                    })
+
+    return {
+        "variant_a": key_a, "variant_b": key_b,
+        "level": "word-set (diacritic-stripped + NFC + equivalence)",
+        "total_verses": total_verses,
+        "same_words": same_words,
+        "different_words": diff_words,
+        "word_similarity_pct": round(same_words / total_verses * 100, 1) if total_verses else 0,
+        "examples": examples,
+    }
