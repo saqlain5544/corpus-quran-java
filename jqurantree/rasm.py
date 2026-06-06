@@ -35,9 +35,13 @@ _PHONETIC_DIACRITICS = frozenset({
     0x064B, 0x064C, 0x064D, 0x064E, 0x064F, 0x0650, 0x0651, 0x0652,
 })
 
-# All Quranic marks to strip
+# RTL/LTR markers to strip
+_LAYOUT_MARKS = frozenset({0x200F, 0x200E})
+
+# All Quranic marks to strip (includes Indo-Pak specific marks)
 _ALL_MARKS = frozenset({
     0x064B, 0x064C, 0x064D, 0x064E, 0x064F, 0x0650, 0x0651, 0x0652,
+    0x0653, 0x0654, 0x0655, 0x0656, 0x0657, 0x0658,
     0x06DC, 0x06DF, 0x06E0, 0x06E1, 0x06E2, 0x06E3,
     0x06E5, 0x06E6, 0x06E8, 0x06EA, 0x06EB, 0x06EC, 0x06ED,
     0x0615, 0x06D6, 0x06D7, 0x06D8, 0x06D9, 0x06DA, 0x06DB,
@@ -46,28 +50,25 @@ _ALL_MARKS = frozenset({
 
 def normalize_rasm(text: str) -> str:
     """Normalize Uthmani rasm to a canonical representation for comparison."""
+    import unicodedata
+    text = unicodedata.normalize("NFD", text)
     text = text.translate(UTHMANI_TO_MODERN)
     text = "".join(ch for ch in text if ord(ch) not in _ALL_MARKS)
+    text = "".join(ch for ch in text if ord(ch) not in _LAYOUT_MARKS)
     text = text.replace("\u0629", "\u0647")   # Ta Marbuta → Ha
     text = text.replace("\u0622", "\u0627")   # Alif Madda → Alif
-    text = text.replace("\u0623", "\u0627")   # Alif Hamza Above → Alif
-    text = text.replace("\u0625", "\u0627")   # Alif Hamza Below → Alif
     return text
 
 
 def rasm_cost(a_char: str, b_char: str, prev_a: str = "", prev_b: str = "") -> float:
-    """
-    Context-aware substitution cost for Needleman-Wunsch alignment.
-    Returns 0.0 for equivalent characters, 1.0 for different characters.
-    
-    Args:
-        a_char: character from text A (e.g., Uthmani)
-        b_char: character from text B (e.g., Simple/modern)
-        prev_a: previous character in A (for context rules)
-        prev_b: previous character in B (for context rules)
-    """
-    # Same character → no cost
+    """Context-aware substitution cost for Needleman-Wunsch alignment."""
     if a_char == b_char:
+        return 0.0
+    if ord(a_char) in _ALL_MARKS or ord(b_char) in _ALL_MARKS:
+        return 0.0
+    if ord(a_char) in _LAYOUT_MARKS or ord(b_char) in _LAYOUT_MARKS:
+        return 0.0
+    if a_char == "\u0670" or b_char == "\u0670":
         return 0.0
     
     # Both are diacritics → no cost (will be stripped anyway)
