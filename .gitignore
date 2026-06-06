@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.cache/
+.DS_Store
+*.tmp
+character_frequency.csv
+data/
