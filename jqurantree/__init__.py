@@ -22,6 +22,7 @@ from .model import Document, Chapter, Verse, Token, Location
 from .tanzil import parse_xml, download_tanzil, DownloadError
 from .search import TokenSearch, AnalysisTable
 from .variants import VARIANTS, Variant, download_variant, load_variant, diff_variants, DiffResult, VerseDiff
+from .morphology import Morphology, Segment
 from .errors import JQuranTreeError, ErrorCode
 
 __version__ = "4.0.0"
@@ -37,5 +38,6 @@ __all__ = [
     "TokenSearch", "AnalysisTable",
     "VARIANTS", "Variant", "download_variant", "load_variant", "diff_variants",
     "DiffResult", "VerseDiff",
+    "Morphology", "Segment",
     "JQuranTreeError", "ErrorCode",
 ]
