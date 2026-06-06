@@ -7,3 +7,4 @@ dist/
 *.tmp
 character_frequency.csv
 data/
+webapp/
