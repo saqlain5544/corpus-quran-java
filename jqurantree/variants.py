@@ -26,19 +26,23 @@ class Variant:
     script: str
     qiraat: str
     filename: str
-    source: str  # "tanzil" or "quran_api"
+    source: str
     tanzil_type: str = ""
     api_edition: str = ""
-
+    full_marks: bool = False
 
 VARIANTS: dict[str, Variant] = {}
-def _reg(k, n, s, q, f, src, tt="", ae=""):
-    VARIANTS[k] = Variant(k, n, s, q, f, src, tt, ae)
+def _reg(k, n, s, q, f, src, tt="", ae="", fm=False):
+    VARIANTS[k] = Variant(k, n, s, q, f, src, tt, ae, fm)
 
 _reg("uthmani", "Uthmani Hafs", "uthmani", "hafs", "quran-uthmani.xml",
      "tanzil", tt="uthmani")
+_reg("uthmani-full", "Uthmani Hafs (full marks)", "uthmani", "hafs",
+     "uthmani-full.xml", "tanzil", tt="uthmani", fm=True)
 _reg("simple", "Simple (Imla'ei)", "simple", "hafs", "quran-simple.xml",
      "tanzil", tt="simple")
+_reg("simple-full", "Simple (full marks)", "simple", "hafs",
+     "simple-full.xml", "tanzil", tt="simple", fm=True)
 _reg("simple-clean", "Simple Clean (bare consonants)", "simple", "hafs",
      "quran-simple-clean.xml", "tanzil", tt="simple-clean")
 _reg("indopak", "Indo-Pak Script", "indopak", "hafs", "ara-quranindopak.json",
@@ -79,8 +83,11 @@ def download_variant(key: str, force: bool = False) -> Path:
 
 
 def _dl_tanzil(v: Variant, dest: Path) -> Path:
-    params = {"quranType": v.tanzil_type, "outType": "xml", "marks": "false",
-              "sajdah": "false", "rub": "false", "tatweel": "true", "stanween": "false"}
+    params = {"quranType": v.tanzil_type, "outType": "xml",
+              "marks": "true" if v.full_marks else "false",
+              "sajdah": "true" if v.full_marks else "false",
+              "rub": "true" if v.full_marks else "false",
+              "tatweel": "true", "stanween": "false"}
     return _http_post(_TANZIL_URL, params, dest)
 
 

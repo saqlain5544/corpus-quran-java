@@ -25,6 +25,7 @@ from .variants import VARIANTS, Variant, download_variant, load_variant, diff_va
 from .morphology import Morphology, Segment
 from .errors import JQuranTreeError, ErrorCode
 from .rasm import normalize_rasm, rasm_cost, needleman_wunsch, word_cost
+from .reader import Reader, Translations
 
 __version__ = "4.0.0"
 
@@ -42,4 +43,5 @@ __all__ = [
     "Morphology", "Segment",
     "JQuranTreeError", "ErrorCode",
     "normalize_rasm", "rasm_cost", "needleman_wunsch", "word_cost",
+    "Reader", "Translations",
 ]
