@@ -12,7 +12,6 @@ struct ReaderView: View {
     @Environment(QuranStore.self) private var store
     @State private var highlightAyah: Int? = nil
     @State private var letterSpacing: CGFloat = 0
-    @State private var tatweelCount: Int = 0
     @State private var fontSize: CGFloat = 42
     @State private var showTypographyPanel: Bool = false
     @State private var showGloss: Bool = false
@@ -33,7 +32,6 @@ struct ReaderView: View {
             if showTypographyPanel {
                 TypographyControlBar(
                     letterSpacing: $letterSpacing,
-                    tatweelCount: $tatweelCount,
                     fontSize: $fontSize,
                     maddLaazimCount: $maddLaazimCount,
                     maddMuttasilCount: $maddMuttasilCount,
@@ -46,7 +44,6 @@ struct ReaderView: View {
         .onAppear { loadPrefs() }
         .onChange(of: fontSize) { savePrefs() }
         .onChange(of: letterSpacing) { savePrefs() }
-        .onChange(of: tatweelCount) { savePrefs() }
         .onChange(of: maddLaazimCount) { savePrefs() }
         .onChange(of: maddMuttasilCount) { savePrefs() }
         .onChange(of: maddMunfasilSpacing) { savePrefs() }
@@ -57,7 +54,6 @@ struct ReaderView: View {
         let d = UserDefaults.standard
         if d.object(forKey: "fontSize") != nil { fontSize = d.double(forKey: "fontSize") }
         if d.object(forKey: "letterSpacing") != nil { letterSpacing = d.double(forKey: "letterSpacing") }
-        if d.object(forKey: "tatweelCount") != nil { tatweelCount = d.integer(forKey: "tatweelCount") }
         if d.object(forKey: "maddLaazimCount") != nil { maddLaazimCount = d.integer(forKey: "maddLaazimCount") }
         if d.object(forKey: "maddMuttasilCount") != nil { maddMuttasilCount = d.integer(forKey: "maddMuttasilCount") }
         if d.object(forKey: "maddMunfasilSpacing") != nil { maddMunfasilSpacing = d.double(forKey: "maddMunfasilSpacing") }
@@ -67,7 +63,6 @@ struct ReaderView: View {
         let d = UserDefaults.standard
         d.set(fontSize, forKey: "fontSize")
         d.set(letterSpacing, forKey: "letterSpacing")
-        d.set(tatweelCount, forKey: "tatweelCount")
         d.set(maddLaazimCount, forKey: "maddLaazimCount")
         d.set(maddMuttasilCount, forKey: "maddMuttasilCount")
         d.set(maddMunfasilSpacing, forKey: "maddMunfasilSpacing")
@@ -84,7 +79,7 @@ struct ReaderView: View {
                             entry: QuranStore.VerseEntry(id: 0, number: 0, text: store.bismillahText, translation: "", wordAnalyses: []),
                             isSelected: false, isHighlighted: false,
                             selectedWordIndex: nil, onSelectWord: { _ in },
-                            letterSpacing: letterSpacing, tatweelCount: tatweelCount,
+                            letterSpacing: letterSpacing,
                             fontSize: fontSize, showGloss: showGloss,
                             maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                             maddMunfasilSpacing: maddMunfasilSpacing
@@ -98,7 +93,7 @@ struct ReaderView: View {
                             isHighlighted: highlightAyah == entry.number,
                             selectedWordIndex: store.selectedWordIndex,
                             onSelectWord: { wordIdx in store.selectWord(wordIdx, in: entry.number) },
-                            letterSpacing: letterSpacing, tatweelCount: tatweelCount,
+                            letterSpacing: letterSpacing,
                             fontSize: fontSize, showGloss: showGloss,
                             maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                             maddMunfasilSpacing: maddMunfasilSpacing
@@ -222,7 +217,6 @@ struct ToolbarButton: View {
 
 struct TypographyControlBar: View {
     @Binding var letterSpacing: CGFloat
-    @Binding var tatweelCount: Int
     @Binding var fontSize: CGFloat
     @Binding var maddLaazimCount: Int
     @Binding var maddMuttasilCount: Int
@@ -244,14 +238,6 @@ struct TypographyControlBar: View {
                 Slider(value: $letterSpacing, in: 0...6, step: 0.5).frame(width: 80).tint(.accentColor)
                 Text(String(format: "%.1f", letterSpacing))
                     .font(.caption.monospaced()).foregroundStyle(.primary).frame(width: 24, alignment: .trailing)
-            }
-            Divider().frame(height: 18)
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.left.and.right.text.vertical").foregroundStyle(.secondary).font(.caption)
-                Text("Tatweel").font(.caption).foregroundStyle(.secondary)
-                Stepper("", value: $tatweelCount, in: 0...5).labelsHidden()
-                Text(tatweelCount == 0 ? "off" : "\(tatweelCount)×")
-                    .font(.caption.monospaced()).foregroundStyle(.primary).frame(width: 26, alignment: .leading)
             }
             Divider().frame(height: 18)
             HStack(spacing: 6) {
@@ -278,12 +264,12 @@ struct TypographyControlBar: View {
             Divider().frame(height: 18)
             Button {
                 withAnimation {
-                    letterSpacing = 0; tatweelCount = 0; fontSize = 42
+                    letterSpacing = 0; fontSize = 42
                     maddLaazimCount = 5; maddMuttasilCount = 3; maddMunfasilSpacing = 10
                 }
             } label: { Image(systemName: "arrow.counterclockwise").font(.caption) }
                 .buttonStyle(.borderless).help("Reset to defaults")
-                .disabled(letterSpacing == 0 && tatweelCount == 0 && fontSize == 42
+                .disabled(letterSpacing == 0 && fontSize == 42
                           && maddLaazimCount == 5 && maddMuttasilCount == 3 && maddMunfasilSpacing == 10)
             Spacer()
         }
@@ -350,7 +336,6 @@ struct VerseBlock: View {
     let selectedWordIndex: Int?
     let onSelectWord: (Int) -> Void
     var letterSpacing: CGFloat = 0
-    var tatweelCount: Int = 0
     var fontSize: CGFloat = 42
     var showGloss: Bool = false
     var maddLaazimCount: Int = 5
@@ -370,7 +355,7 @@ struct VerseBlock: View {
                 VStack(alignment: .trailing, spacing: 0) {
                     InteractiveArabicText(
                         text: entry.text, wordAnalyses: entry.wordAnalyses,
-                        fontSize: fontSize, letterSpacing: letterSpacing, tatweelCount: tatweelCount,
+                        fontSize: fontSize, letterSpacing: letterSpacing,
                         maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                         maddMunfasilSpacing: maddMunfasilSpacing
                     )

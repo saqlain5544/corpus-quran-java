@@ -29,21 +29,46 @@ public enum MaddDetector {
             guard next < scalars.count else { continue }
 
             if scalars[next].value == 0x0651 {
-                return MaddMatch(type: .laazim, scalarIndex: i)
+                guard i > 0 else { continue }
+                return MaddMatch(type: .laazim, scalarIndex: i - 1)
             }
             if scalars[next].value == 0x0653 {
                 let afterMaddah = next + 1
                 if afterMaddah < scalars.count, scalars[afterMaddah].value == 0x0651 {
-                    return MaddMatch(type: .laazim, scalarIndex: i)
+                    guard i > 0 else { continue }
+                    return MaddMatch(type: .laazim, scalarIndex: i - 1)
                 }
             }
 
             for j in (i + 1)..<scalars.count {
                 let cp = scalars[j].value
-                if cp == 0x0651 { return MaddMatch(type: .laazim, scalarIndex: i) }
-                if hamzaScalars.contains(cp) { return MaddMatch(type: .muttasil, scalarIndex: i) }
+                if cp == 0x0651 {
+                    guard i > 0 else { break }
+                    return MaddMatch(type: .laazim, scalarIndex: i - 1)
+                }
+                if hamzaScalars.contains(cp) {
+                    guard i > 0 else { break }
+                    return MaddMatch(type: .muttasil, scalarIndex: i - 1)
+                }
                 if cp >= 0x064B { break }
             }
+        }
+        return nil
+    }
+
+    public static func munfasilPrecedingIndex(_ word: String) -> Int? {
+        let scalars = Array(word.precomposedStringWithCanonicalMapping.unicodeScalars)
+        for i in stride(from: scalars.count - 1, through: 0, by: -1) {
+            let cp = scalars[i].value
+            let bare: UInt32
+            switch cp {
+            case 0x0649: bare = 0x064A
+            case 0x06E5, 0x06E6, 0x06E7, 0x06E8, 0x06ED: return i > 0 ? i - 1 : nil
+            case 0x064B...0x0654, 0x0670: continue
+            default: bare = cp
+            }
+            if maddLetters.contains(bare), i > 0 { return i - 1 }
+            break
         }
         return nil
     }

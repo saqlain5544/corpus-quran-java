@@ -7,7 +7,6 @@ struct InteractiveArabicText: View {
     let fontSize: CGFloat
 
     var letterSpacing: CGFloat = 0
-    var tatweelCount: Int = 0
     var maddLaazimCount: Int = 5
     var maddMuttasilCount: Int = 3
     var maddMunfasilSpacing: CGFloat = 10
@@ -16,21 +15,20 @@ struct InteractiveArabicText: View {
         let text: String
         let index: Int
         let madd: MaddMatch?
-        var needsMunfasilSpacing: Bool { madd?.type == .munfasil }
+        var hasMadd: Bool { madd != nil }
     }
 
     @State private var cachedWords: [WordEntry] = []
     @State private var analysisByWord: [Int: WordAnalysis] = [:]
 
     init(text: String, wordAnalyses: [WordAnalysis], fontSize: CGFloat = 40,
-         letterSpacing: CGFloat = 0, tatweelCount: Int = 0,
+         letterSpacing: CGFloat = 0,
          maddLaazimCount: Int = 5, maddMuttasilCount: Int = 3,
          maddMunfasilSpacing: CGFloat = 10) {
         self.text = text
         self.wordAnalyses = wordAnalyses
         self.fontSize = fontSize
         self.letterSpacing = letterSpacing
-        self.tatweelCount = tatweelCount
         self.maddLaazimCount = maddLaazimCount
         self.maddMuttasilCount = maddMuttasilCount
         self.maddMunfasilSpacing = maddMunfasilSpacing
@@ -61,7 +59,9 @@ struct InteractiveArabicText: View {
             var match = MaddDetector.detect(inWord: token)
             if match == nil, i + 1 < tokenStrings.count {
                 if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
-                    match = MaddMatch(type: .munfasil, scalarIndex: token.unicodeScalars.count - 1)
+                    if let idx = MaddDetector.munfasilPrecedingIndex(token) {
+                        match = MaddMatch(type: .munfasil, scalarIndex: idx)
+                    }
                 }
             }
             entries.append(WordEntry(text: token, index: i + 1, madd: match))
@@ -71,9 +71,8 @@ struct InteractiveArabicText: View {
 
     @ViewBuilder
     private func wordView(entry: WordEntry) -> some View {
-        let baseText = tatweelCount > 0 ? applyTatweel(to: entry.text, count: tatweelCount) : entry.text
-        let displayText = maddElongatedText(base: baseText, entry: entry)
-        let extraTrailing = entry.needsMunfasilSpacing ? maddMunfasilSpacing : CGFloat(0)
+        let displayText = elongatedText(entry: entry)
+        let trailingPad = entry.hasMadd ? maddMunfasilSpacing : CGFloat(0)
         if let analysis = analysisByWord[entry.index], !analysis.segments.isEmpty {
             WordTokenView(
                 token: displayText,
@@ -81,33 +80,19 @@ struct InteractiveArabicText: View {
                 fontSize: fontSize,
                 letterSpacing: letterSpacing
             )
-            .padding(.trailing, extraTrailing)
+            .padding(.trailing, trailingPad)
         } else {
             Text(displayText)
                 .font(loadQuranFont(size: fontSize))
                 .kerning(letterSpacing)
-                .padding(.trailing, extraTrailing)
+                .padding(.trailing, trailingPad)
         }
     }
 
-    private func maddElongatedText(base: String, entry: WordEntry) -> String {
-        guard let m = entry.madd, m.type != .munfasil else { return base }
+    private func elongatedText(entry: WordEntry) -> String {
+        guard let m = entry.madd else { return entry.text }
         let count = m.type == .laazim ? maddLaazimCount : maddMuttasilCount
-        return MaddDetector.applyElongation(to: base, match: m, count: count)
-    }
-
-    private func applyTatweel(to word: String, count: Int) -> String {
-        guard count > 0 else { return word }
-        let tatweel = String(repeating: "\u{0640}", count: count)
-        let madd: Set<UInt32> = [0x0627, 0x0648, 0x064A, 0x0649]
-        var result = ""
-        for ch in word {
-            result.append(ch)
-            if let cp = ch.unicodeScalars.first?.value, madd.contains(cp) {
-                result.append(tatweel)
-            }
-        }
-        return result
+        return MaddDetector.applyElongation(to: entry.text, match: m, count: count)
     }
 }
 
