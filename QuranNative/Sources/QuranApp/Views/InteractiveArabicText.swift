@@ -57,10 +57,11 @@ struct InteractiveArabicText: View {
         entries.reserveCapacity(tokenStrings.count)
         for (i, token) in tokenStrings.enumerated() {
             var match = MaddDetector.detect(inWord: token)
+            if match == nil { match = MaddDetector.detectMuqatta(inWord: token) }
             if match == nil, i + 1 < tokenStrings.count {
                 if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
-                    if let idx = MaddDetector.munfasilPrecedingIndex(token) {
-                        match = MaddMatch(type: .munfasil, scalarIndex: idx)
+                    if let idx = MaddDetector.munfasilInsertionIndex(token) {
+                        match = MaddMatch(rule: .munfasil, insertionIndex: idx)
                     }
                 }
             }
@@ -91,7 +92,12 @@ struct InteractiveArabicText: View {
 
     private func elongatedText(entry: WordEntry) -> String {
         guard let m = entry.madd else { return entry.text }
-        let count = m.type == .laazim ? maddLaazimCount : maddMuttasilCount
+        let count: Int
+        switch m.rule {
+        case .laazimKalami, .laazimHarfi: count = maddLaazimCount
+        case .muttasil, .aarid, .leen:     count = maddMuttasilCount
+        case .munfasil:                      count = maddMuttasilCount
+        }
         return MaddDetector.applyElongation(to: entry.text, match: m, count: count)
     }
 }
