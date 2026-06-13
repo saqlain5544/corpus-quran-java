@@ -9,7 +9,14 @@ struct InteractiveArabicText: View {
     var letterSpacing: CGFloat = 0
     var tatweelCount: Int = 0
 
-    @State private var cachedWords: [(text: String, index: Int)] = []
+    struct WordEntry {
+        let text: String
+        let index: Int
+        let maddType: MaddType?
+        var kerning: CGFloat { maddType != nil ? 1.5 : 0 }
+    }
+
+    @State private var cachedWords: [WordEntry] = []
     @State private var analysisByWord: [Int: WordAnalysis] = [:]
 
     init(text: String, wordAnalyses: [WordAnalysis], fontSize: CGFloat = 40,
@@ -24,7 +31,7 @@ struct InteractiveArabicText: View {
     var body: some View {
         FlowLayoutRTL(spacing: 0) {
             ForEach(Array(cachedWords.enumerated()), id: \.offset) { _, word in
-                wordView(text: word.text, wordNum: word.index)
+                wordView(entry: word)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
@@ -39,25 +46,38 @@ struct InteractiveArabicText: View {
         analysisByWord = dict
 
         let tokens = text.split(separator: " ", omittingEmptySubsequences: true)
-        cachedWords = tokens.enumerated().map { i, t in (String(t), i + 1) }
+        let tokenStrings = tokens.map { String($0) }
+        var entries: [WordEntry] = []
+        entries.reserveCapacity(tokenStrings.count)
+        for (i, token) in tokenStrings.enumerated() {
+            var madd: MaddType? = MaddDetector.detect(inWord: token)
+            if madd == nil, i + 1 < tokenStrings.count {
+                if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
+                    madd = .munfasil
+                }
+            }
+            entries.append(WordEntry(text: token, index: i + 1, maddType: madd))
+        }
+        cachedWords = entries
     }
 
     @ViewBuilder
-    private func wordView(text: String, wordNum: Int) -> some View {
+    private func wordView(entry: WordEntry) -> some View {
         let displayText = tatweelCount > 0
-            ? applyTatweel(to: text, count: tatweelCount)
-            : text
-        if let analysis = analysisByWord[wordNum], !analysis.segments.isEmpty {
+            ? applyTatweel(to: entry.text, count: tatweelCount)
+            : entry.text
+        let extraKerning = entry.kerning
+        if let analysis = analysisByWord[entry.index], !analysis.segments.isEmpty {
             WordTokenView(
                 token: displayText,
                 analysis: analysis,
                 fontSize: fontSize,
-                letterSpacing: letterSpacing
+                letterSpacing: letterSpacing + extraKerning
             )
         } else {
             Text(displayText)
                 .font(loadQuranFont(size: fontSize))
-                .kerning(letterSpacing)
+                .kerning(letterSpacing + extraKerning)
         }
     }
 
