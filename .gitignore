@@ -8,3 +8,6 @@ dist/
 character_frequency.csv
 data/
 webapp/
+QuranNative/.build/
+QuranNative/.swiftpm/
+
