@@ -8,6 +8,9 @@ struct InteractiveArabicText: View {
 
     var letterSpacing: CGFloat = 0
     var tatweelCount: Int = 0
+    var maddLaazimCount: Int = 5
+    var maddMuttasilCount: Int = 3
+    var maddMunfasilSpacing: CGFloat = 10
 
     struct WordEntry {
         let text: String
@@ -20,12 +23,17 @@ struct InteractiveArabicText: View {
     @State private var analysisByWord: [Int: WordAnalysis] = [:]
 
     init(text: String, wordAnalyses: [WordAnalysis], fontSize: CGFloat = 40,
-         letterSpacing: CGFloat = 0, tatweelCount: Int = 0) {
+         letterSpacing: CGFloat = 0, tatweelCount: Int = 0,
+         maddLaazimCount: Int = 5, maddMuttasilCount: Int = 3,
+         maddMunfasilSpacing: CGFloat = 10) {
         self.text = text
         self.wordAnalyses = wordAnalyses
         self.fontSize = fontSize
         self.letterSpacing = letterSpacing
         self.tatweelCount = tatweelCount
+        self.maddLaazimCount = maddLaazimCount
+        self.maddMuttasilCount = maddMuttasilCount
+        self.maddMunfasilSpacing = maddMunfasilSpacing
     }
 
     var body: some View {
@@ -65,7 +73,7 @@ struct InteractiveArabicText: View {
     private func wordView(entry: WordEntry) -> some View {
         let baseText = tatweelCount > 0 ? applyTatweel(to: entry.text, count: tatweelCount) : entry.text
         let displayText = maddElongatedText(base: baseText, entry: entry)
-        let extraTrailing = entry.needsMunfasilSpacing ? CGFloat(10) : CGFloat(0)
+        let extraTrailing = entry.needsMunfasilSpacing ? maddMunfasilSpacing : CGFloat(0)
         if let analysis = analysisByWord[entry.index], !analysis.segments.isEmpty {
             WordTokenView(
                 token: displayText,
@@ -84,7 +92,8 @@ struct InteractiveArabicText: View {
 
     private func maddElongatedText(base: String, entry: WordEntry) -> String {
         guard let m = entry.madd, m.type != .munfasil else { return base }
-        return MaddDetector.applyElongation(to: base, match: m)
+        let count = m.type == .laazim ? maddLaazimCount : maddMuttasilCount
+        return MaddDetector.applyElongation(to: base, match: m, count: count)
     }
 
     private func applyTatweel(to word: String, count: Int) -> String {

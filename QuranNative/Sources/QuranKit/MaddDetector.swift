@@ -66,14 +66,9 @@ public enum MaddDetector {
         return hamzaScalars.contains(first.value)
     }
 
-    public static func applyElongation(to word: String, match: MaddMatch) -> String {
+    public static func applyElongation(to word: String, match: MaddMatch, count: Int) -> String {
         let scalars = Array(word.decomposedStringWithCanonicalMapping.unicodeScalars)
-        let count: Int
-        switch match.type {
-        case .laazim: count = 5
-        case .muttasil: count = 3
-        case .munfasil: count = 2
-        }
+        guard count > 0 else { return word }
         let tatweel = String(repeating: "\u{0640}", count: count)
         var result = ""
         for (i, scalar) in scalars.enumerated() {
