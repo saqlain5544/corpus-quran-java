@@ -7,15 +7,24 @@ struct InteractiveArabicText: View {
     let fontSize: CGFloat
 
     var letterSpacing: CGFloat = 0
-    var maddLaazimCount: Int = 5
-    var maddMuttasilCount: Int = 3
     var maddMunfasilSpacing: CGFloat = 10
+
+    private nonisolated static let laazimTracking: CGFloat = 0.8
+    private nonisolated static let muttasilTracking: CGFloat = 0.4
 
     struct WordEntry {
         let text: String
         let index: Int
         let madd: MaddMatch?
-        var hasMadd: Bool { madd != nil }
+        var extraTracking: CGFloat {
+            guard let m = madd else { return 0 }
+            switch m.rule {
+            case .laazimKalami, .laazimHarfi: return laazimTracking
+            case .muttasil: return muttasilTracking
+            case .munfasil: return 0
+            }
+        }
+        var needsSpacing: Bool { madd?.rule == .munfasil }
     }
 
     @State private var cachedWords: [WordEntry] = []
@@ -23,14 +32,11 @@ struct InteractiveArabicText: View {
 
     init(text: String, wordAnalyses: [WordAnalysis], fontSize: CGFloat = 40,
          letterSpacing: CGFloat = 0,
-         maddLaazimCount: Int = 5, maddMuttasilCount: Int = 3,
          maddMunfasilSpacing: CGFloat = 10) {
         self.text = text
         self.wordAnalyses = wordAnalyses
         self.fontSize = fontSize
         self.letterSpacing = letterSpacing
-        self.maddLaazimCount = maddLaazimCount
-        self.maddMuttasilCount = maddMuttasilCount
         self.maddMunfasilSpacing = maddMunfasilSpacing
     }
 
@@ -60,9 +66,7 @@ struct InteractiveArabicText: View {
             if match == nil { match = MaddDetector.detectMuqatta(inWord: token) }
             if match == nil, i + 1 < tokenStrings.count {
                 if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
-                    if let idx = MaddDetector.munfasilInsertionIndex(token) {
-                        match = MaddMatch(rule: .munfasil, insertionIndex: idx)
-                    }
+                    match = MaddMatch(rule: .munfasil)
                 }
             }
             entries.append(WordEntry(text: token, index: i + 1, madd: match))
@@ -72,32 +76,22 @@ struct InteractiveArabicText: View {
 
     @ViewBuilder
     private func wordView(entry: WordEntry) -> some View {
-        let displayText = elongatedText(entry: entry)
-        let trailingPad = entry.hasMadd ? maddMunfasilSpacing : CGFloat(0)
+        let tracking = letterSpacing + entry.extraTracking
+        let trailingPad = entry.needsSpacing ? maddMunfasilSpacing : CGFloat(0)
         if let analysis = analysisByWord[entry.index], !analysis.segments.isEmpty {
             WordTokenView(
-                token: displayText,
+                token: entry.text,
                 analysis: analysis,
                 fontSize: fontSize,
-                letterSpacing: letterSpacing
+                letterSpacing: tracking
             )
             .padding(.trailing, trailingPad)
         } else {
-            Text(displayText)
+            Text(entry.text)
                 .font(loadQuranFont(size: fontSize))
-                .kerning(letterSpacing)
+                .kerning(tracking)
                 .padding(.trailing, trailingPad)
         }
-    }
-
-    private func elongatedText(entry: WordEntry) -> String {
-        guard let m = entry.madd else { return entry.text }
-        let count: Int
-        switch m.rule {
-        case .laazimKalami, .laazimHarfi: count = maddLaazimCount
-        case .muttasil, .munfasil:        count = maddMuttasilCount
-        }
-        return MaddDetector.applyElongation(to: entry.text, match: m, count: count)
     }
 }
 

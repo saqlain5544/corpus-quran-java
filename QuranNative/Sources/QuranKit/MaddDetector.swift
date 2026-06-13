@@ -9,11 +9,9 @@ public enum MaddRule: Sendable {
 
 public struct MaddMatch: Sendable {
     public let rule: MaddRule
-    public let insertionIndex: Int
 
-    public init(rule: MaddRule, insertionIndex: Int) {
+    public init(rule: MaddRule) {
         self.rule = rule
-        self.insertionIndex = insertionIndex
     }
 }
 
@@ -109,9 +107,9 @@ public enum MaddDetector {
                     else if t.hasKasra { state = .vowelKasra(t.scalarIndex) }
                 }
 
-            case .vowelFatha(let baseIdx):
+            case .vowelFatha:
                 if t.isAlif || t.isAlifMaksura {
-                    if let m = classify(maddToken: t, next: next, nextNext: nextNext, baseIdx: baseIdx) {
+                    if let m = classify(maddToken: t, next: next, nextNext: nextNext) {
                         return m
                     }
                     state = .idle
@@ -119,9 +117,9 @@ public enum MaddDetector {
                 }
                 transition(from: &state, token: t)
 
-            case .vowelDamma(let baseIdx):
+            case .vowelDamma:
                 if t.isWaw {
-                    if let m = classify(maddToken: t, next: next, nextNext: nextNext, baseIdx: baseIdx) {
+                    if let m = classify(maddToken: t, next: next, nextNext: nextNext) {
                         return m
                     }
                     state = .idle
@@ -129,9 +127,9 @@ public enum MaddDetector {
                 }
                 transition(from: &state, token: t)
 
-            case .vowelKasra(let baseIdx):
+            case .vowelKasra:
                 if t.isYa, !t.hasShaddah {
-                    if let m = classify(maddToken: t, next: next, nextNext: nextNext, baseIdx: baseIdx) {
+                    if let m = classify(maddToken: t, next: next, nextNext: nextNext) {
                         return m
                     }
                     state = .idle
@@ -156,14 +154,13 @@ public enum MaddDetector {
         return nil
     }
 
-    private static func classify(maddToken: Token, next: Token?, nextNext: Token?,
-                                  baseIdx: Int) -> MaddMatch? {
+    private static func classify(maddToken: Token, next: Token?, nextNext: Token?) -> MaddMatch? {
         guard let n = next else { return nil }
-        if n.hasShaddah { return MaddMatch(rule: .laazimKalami, insertionIndex: baseIdx) }
+        if n.hasShaddah { return MaddMatch(rule: .laazimKalami) }
         if n.hasMaddah, let nn = nextNext, nn.hasShaddah {
-            return MaddMatch(rule: .laazimKalami, insertionIndex: baseIdx)
+            return MaddMatch(rule: .laazimKalami)
         }
-        if n.isHamzah { return MaddMatch(rule: .muttasil, insertionIndex: baseIdx) }
+        if n.isHamzah { return MaddMatch(rule: .muttasil) }
         return nil
     }
 
@@ -185,39 +182,14 @@ public enum MaddDetector {
         return first.isHamzah
     }
 
-    public static func munfasilInsertionIndex(_ word: String) -> Int? {
-        let tokens = tokenize(word)
-        guard tokens.count >= 2 else { return nil }
-        let prev = tokens[tokens.count - 2]
-        let last = tokens[tokens.count - 1]
-        let isMadd: Bool = (prev.hasFatha && (last.isAlif || last.isAlifMaksura))
-            || (prev.hasDamma && last.isWaw)
-            || (prev.hasKasra && last.isYa && !last.hasShaddah)
-        return isMadd ? prev.scalarIndex : nil
-    }
-
     public static func detectMuqatta(inWord word: String) -> MaddMatch? {
         let tokens = tokenize(word)
         guard tokens.count == 1 else { return nil }
         let t = tokens[0]
         guard !t.hasSukun, !t.hasShaddah else { return nil }
         if t.hasFatha && (t.isAlif || t.isWaw || t.isYa || t.isAlifMaksura) {
-            return MaddMatch(rule: .laazimHarfi, insertionIndex: t.scalarIndex)
+            return MaddMatch(rule: .laazimHarfi)
         }
         return nil
-    }
-
-    public static func applyElongation(to word: String, match: MaddMatch, count: Int) -> String {
-        let scalars = Array(word.decomposedStringWithCanonicalMapping.unicodeScalars)
-        guard count > 0, match.insertionIndex < scalars.count else { return word }
-        let tatweel = String(repeating: "\u{0640}", count: count)
-        var result = ""
-        for (i, scalar) in scalars.enumerated() {
-            result.append(String(scalar))
-            if i == match.insertionIndex {
-                result.append(tatweel)
-            }
-        }
-        return result.precomposedStringWithCanonicalMapping
     }
 }

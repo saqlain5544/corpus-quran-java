@@ -16,8 +16,6 @@ struct ReaderView: View {
     @State private var showTypographyPanel: Bool = false
     @State private var showGloss: Bool = false
     @State private var highlightTask: Task<Void, Never>?
-    @State private var maddLaazimCount: Int = 5
-    @State private var maddMuttasilCount: Int = 3
     @State private var maddMunfasilSpacing: CGFloat = 10
 
     var body: some View {
@@ -33,8 +31,6 @@ struct ReaderView: View {
                 TypographyControlBar(
                     letterSpacing: $letterSpacing,
                     fontSize: $fontSize,
-                    maddLaazimCount: $maddLaazimCount,
-                    maddMuttasilCount: $maddMuttasilCount,
                     maddMunfasilSpacing: $maddMunfasilSpacing
                 )
                 Divider()
@@ -44,8 +40,6 @@ struct ReaderView: View {
         .onAppear { loadPrefs() }
         .onChange(of: fontSize) { savePrefs() }
         .onChange(of: letterSpacing) { savePrefs() }
-        .onChange(of: maddLaazimCount) { savePrefs() }
-        .onChange(of: maddMuttasilCount) { savePrefs() }
         .onChange(of: maddMunfasilSpacing) { savePrefs() }
         .onChange(of: store.selectedSura) { savePrefs() }
     }
@@ -54,8 +48,6 @@ struct ReaderView: View {
         let d = UserDefaults.standard
         if d.object(forKey: "fontSize") != nil { fontSize = d.double(forKey: "fontSize") }
         if d.object(forKey: "letterSpacing") != nil { letterSpacing = d.double(forKey: "letterSpacing") }
-        if d.object(forKey: "maddLaazimCount") != nil { maddLaazimCount = d.integer(forKey: "maddLaazimCount") }
-        if d.object(forKey: "maddMuttasilCount") != nil { maddMuttasilCount = d.integer(forKey: "maddMuttasilCount") }
         if d.object(forKey: "maddMunfasilSpacing") != nil { maddMunfasilSpacing = d.double(forKey: "maddMunfasilSpacing") }
     }
 
@@ -63,8 +55,6 @@ struct ReaderView: View {
         let d = UserDefaults.standard
         d.set(fontSize, forKey: "fontSize")
         d.set(letterSpacing, forKey: "letterSpacing")
-        d.set(maddLaazimCount, forKey: "maddLaazimCount")
-        d.set(maddMuttasilCount, forKey: "maddMuttasilCount")
         d.set(maddMunfasilSpacing, forKey: "maddMunfasilSpacing")
     }
 
@@ -81,7 +71,6 @@ struct ReaderView: View {
                             selectedWordIndex: nil, onSelectWord: { _ in },
                             letterSpacing: letterSpacing,
                             fontSize: fontSize, showGloss: showGloss,
-                            maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                             maddMunfasilSpacing: maddMunfasilSpacing
                         ).id("bismillah")
                     }
@@ -95,7 +84,6 @@ struct ReaderView: View {
                             onSelectWord: { wordIdx in store.selectWord(wordIdx, in: entry.number) },
                             letterSpacing: letterSpacing,
                             fontSize: fontSize, showGloss: showGloss,
-                            maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                             maddMunfasilSpacing: maddMunfasilSpacing
                         ).id(entry.number)
                     }
@@ -218,8 +206,6 @@ struct ToolbarButton: View {
 struct TypographyControlBar: View {
     @Binding var letterSpacing: CGFloat
     @Binding var fontSize: CGFloat
-    @Binding var maddLaazimCount: Int
-    @Binding var maddMuttasilCount: Int
     @Binding var maddMunfasilSpacing: CGFloat
 
     var body: some View {
@@ -241,20 +227,6 @@ struct TypographyControlBar: View {
             }
             Divider().frame(height: 18)
             HStack(spacing: 6) {
-                Image(systemName: "text.alignleft").foregroundStyle(.secondary).font(.caption)
-                Text("Lzm").font(.caption).foregroundStyle(.secondary)
-                Stepper("", value: $maddLaazimCount, in: 0...10).labelsHidden()
-                Text(maddLaazimCount == 0 ? "off" : "\(maddLaazimCount)×")
-                    .font(.caption.monospaced()).foregroundStyle(.primary).frame(width: 26, alignment: .leading)
-            }
-            HStack(spacing: 6) {
-                Image(systemName: "text.aligncenter").foregroundStyle(.secondary).font(.caption)
-                Text("Mts").font(.caption).foregroundStyle(.secondary)
-                Stepper("", value: $maddMuttasilCount, in: 0...10).labelsHidden()
-                Text(maddMuttasilCount == 0 ? "off" : "\(maddMuttasilCount)×")
-                    .font(.caption.monospaced()).foregroundStyle(.primary).frame(width: 26, alignment: .leading)
-            }
-            HStack(spacing: 6) {
                 Image(systemName: "text.justify").foregroundStyle(.secondary).font(.caption)
                 Text("Mfs").font(.caption).foregroundStyle(.secondary)
                 Slider(value: $maddMunfasilSpacing, in: 0...30, step: 1).frame(width: 60).tint(.accentColor)
@@ -264,13 +236,11 @@ struct TypographyControlBar: View {
             Divider().frame(height: 18)
             Button {
                 withAnimation {
-                    letterSpacing = 0; fontSize = 42
-                    maddLaazimCount = 5; maddMuttasilCount = 3; maddMunfasilSpacing = 10
+                    letterSpacing = 0; fontSize = 42; maddMunfasilSpacing = 10
                 }
             } label: { Image(systemName: "arrow.counterclockwise").font(.caption) }
                 .buttonStyle(.borderless).help("Reset to defaults")
-                .disabled(letterSpacing == 0 && fontSize == 42
-                          && maddLaazimCount == 5 && maddMuttasilCount == 3 && maddMunfasilSpacing == 10)
+                .disabled(letterSpacing == 0 && fontSize == 42 && maddMunfasilSpacing == 10)
             Spacer()
         }
         .padding(.horizontal, 16).padding(.vertical, 8).background(Color.accentColor.opacity(0.04))
@@ -338,8 +308,6 @@ struct VerseBlock: View {
     var letterSpacing: CGFloat = 0
     var fontSize: CGFloat = 42
     var showGloss: Bool = false
-    var maddLaazimCount: Int = 5
-    var maddMuttasilCount: Int = 3
     var maddMunfasilSpacing: CGFloat = 10
     @Environment(QuranStore.self) private var store
     @State private var showActions = false
@@ -356,7 +324,6 @@ struct VerseBlock: View {
                     InteractiveArabicText(
                         text: entry.text, wordAnalyses: entry.wordAnalyses,
                         fontSize: fontSize, letterSpacing: letterSpacing,
-                        maddLaazimCount: maddLaazimCount, maddMuttasilCount: maddMuttasilCount,
                         maddMunfasilSpacing: maddMunfasilSpacing
                     )
                     .frame(maxWidth: .infinity, alignment: .trailing)
