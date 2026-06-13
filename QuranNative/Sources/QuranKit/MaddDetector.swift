@@ -6,11 +6,21 @@ public enum MaddType: Sendable {
     case munfasil
 }
 
+public struct MaddMatch: Sendable {
+    public let type: MaddType
+    public let scalarIndex: Int
+
+    public init(type: MaddType, scalarIndex: Int) {
+        self.type = type
+        self.scalarIndex = scalarIndex
+    }
+}
+
 public enum MaddDetector {
     private static let maddLetters: Set<UInt32> = [0x0627, 0x0648, 0x064A]
     private static let hamzaScalars: Set<UInt32> = [0x0621, 0x0623, 0x0625, 0x0626]
 
-    public static func detect(inWord word: String) -> MaddType? {
+    public static func detect(inWord word: String) -> MaddMatch? {
         let scalars = Array(word.precomposedStringWithCanonicalMapping.unicodeScalars)
         for i in 0..<scalars.count {
             guard maddLetters.contains(scalars[i].value) else { continue }
@@ -19,19 +29,19 @@ public enum MaddDetector {
             guard next < scalars.count else { continue }
 
             if scalars[next].value == 0x0651 {
-                return .laazim
+                return MaddMatch(type: .laazim, scalarIndex: i)
             }
             if scalars[next].value == 0x0653 {
                 let afterMaddah = next + 1
                 if afterMaddah < scalars.count, scalars[afterMaddah].value == 0x0651 {
-                    return .laazim
+                    return MaddMatch(type: .laazim, scalarIndex: i)
                 }
             }
 
             for j in (i + 1)..<scalars.count {
                 let cp = scalars[j].value
-                if cp == 0x0651 { return .laazim }
-                if hamzaScalars.contains(cp) { return .muttasil }
+                if cp == 0x0651 { return MaddMatch(type: .laazim, scalarIndex: i) }
+                if hamzaScalars.contains(cp) { return MaddMatch(type: .muttasil, scalarIndex: i) }
                 if cp >= 0x064B { break }
             }
         }
@@ -54,5 +64,24 @@ public enum MaddDetector {
             return false
         }
         return hamzaScalars.contains(first.value)
+    }
+
+    public static func applyElongation(to word: String, match: MaddMatch) -> String {
+        let scalars = Array(word.decomposedStringWithCanonicalMapping.unicodeScalars)
+        let count: Int
+        switch match.type {
+        case .laazim: count = 5
+        case .muttasil: count = 3
+        case .munfasil: count = 2
+        }
+        let tatweel = String(repeating: "\u{0640}", count: count)
+        var result = ""
+        for (i, scalar) in scalars.enumerated() {
+            result.append(String(scalar))
+            if i == match.scalarIndex {
+                result.append(tatweel)
+            }
+        }
+        return result.precomposedStringWithCanonicalMapping
     }
 }

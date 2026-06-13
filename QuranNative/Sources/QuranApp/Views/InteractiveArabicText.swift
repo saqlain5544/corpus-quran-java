@@ -12,8 +12,8 @@ struct InteractiveArabicText: View {
     struct WordEntry {
         let text: String
         let index: Int
-        let maddType: MaddType?
-        var kerning: CGFloat { maddType != nil ? 1.5 : 0 }
+        let madd: MaddMatch?
+        var needsMunfasilSpacing: Bool { madd?.type == .munfasil }
     }
 
     @State private var cachedWords: [WordEntry] = []
@@ -50,35 +50,41 @@ struct InteractiveArabicText: View {
         var entries: [WordEntry] = []
         entries.reserveCapacity(tokenStrings.count)
         for (i, token) in tokenStrings.enumerated() {
-            var madd: MaddType? = MaddDetector.detect(inWord: token)
-            if madd == nil, i + 1 < tokenStrings.count {
+            var match = MaddDetector.detect(inWord: token)
+            if match == nil, i + 1 < tokenStrings.count {
                 if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
-                    madd = .munfasil
+                    match = MaddMatch(type: .munfasil, scalarIndex: token.unicodeScalars.count - 1)
                 }
             }
-            entries.append(WordEntry(text: token, index: i + 1, maddType: madd))
+            entries.append(WordEntry(text: token, index: i + 1, madd: match))
         }
         cachedWords = entries
     }
 
     @ViewBuilder
     private func wordView(entry: WordEntry) -> some View {
-        let displayText = tatweelCount > 0
-            ? applyTatweel(to: entry.text, count: tatweelCount)
-            : entry.text
-        let extraKerning = entry.kerning
+        let baseText = tatweelCount > 0 ? applyTatweel(to: entry.text, count: tatweelCount) : entry.text
+        let displayText = maddElongatedText(base: baseText, entry: entry)
+        let extraTrailing = entry.needsMunfasilSpacing ? CGFloat(10) : CGFloat(0)
         if let analysis = analysisByWord[entry.index], !analysis.segments.isEmpty {
             WordTokenView(
                 token: displayText,
                 analysis: analysis,
                 fontSize: fontSize,
-                letterSpacing: letterSpacing + extraKerning
+                letterSpacing: letterSpacing
             )
+            .padding(.trailing, extraTrailing)
         } else {
             Text(displayText)
                 .font(loadQuranFont(size: fontSize))
-                .kerning(letterSpacing + extraKerning)
+                .kerning(letterSpacing)
+                .padding(.trailing, extraTrailing)
         }
+    }
+
+    private func maddElongatedText(base: String, entry: WordEntry) -> String {
+        guard let m = entry.madd, m.type != .munfasil else { return base }
+        return MaddDetector.applyElongation(to: base, match: m)
     }
 
     private func applyTatweel(to word: String, count: Int) -> String {
