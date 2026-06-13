@@ -9,21 +9,11 @@ struct InteractiveArabicText: View {
     var letterSpacing: CGFloat = 0
     var maddMunfasilSpacing: CGFloat = 10
 
-    private nonisolated static let laazimTracking: CGFloat = 0.8
-    private nonisolated static let muttasilTracking: CGFloat = 0.4
-
     struct WordEntry {
         let text: String
         let index: Int
         let madd: MaddMatch?
-        var extraTracking: CGFloat {
-            guard let m = madd else { return 0 }
-            switch m.rule {
-            case .laazimKalami, .laazimHarfi: return laazimTracking
-            case .muttasil: return muttasilTracking
-            case .munfasil: return 0
-            }
-        }
+        var extraTracking: CGFloat { madd?.tracking ?? 0 }
         var needsSpacing: Bool { madd?.rule == .munfasil }
     }
 
@@ -66,12 +56,23 @@ struct InteractiveArabicText: View {
             if match == nil { match = MaddDetector.detectMuqatta(inWord: token) }
             if match == nil, i + 1 < tokenStrings.count {
                 if MaddDetector.isMunfasil(endOfWord: token, startOfNextWord: tokenStrings[i + 1]) {
-                    match = MaddMatch(rule: .munfasil)
+                    match = MaddMatch(rule: .munfasil, letterClass: munfasilLetterClass(token))
                 }
             }
             entries.append(WordEntry(text: token, index: i + 1, madd: match))
         }
         cachedWords = entries
+    }
+
+    private func munfasilLetterClass(_ word: String) -> MaddLetterClass {
+        let last = word.precomposedStringWithCanonicalMapping.unicodeScalars.last
+        switch last?.value {
+        case 0x0627, 0x0622, 0x0623, 0x0625: return .alif
+        case 0x0648: return .waw
+        case 0x064A: return .ya
+        case 0x0649: return .alifMaksura
+        default: return .alif
+        }
     }
 
     @ViewBuilder

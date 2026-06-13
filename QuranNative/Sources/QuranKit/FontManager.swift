@@ -82,8 +82,16 @@ public final class FontManager: @unchecked Sendable {
     /// 3. SF Arabic (macOS system font)
     /// 4. Geeza Pro (macOS system font)
     public func quranFont(size: CGFloat) -> CTFont? {
-        if let f = amiriQuran { return CTFontCreateCopyWithAttributes(f, size, nil, nil) }
-        if let f = amiriQuranColored { return CTFontCreateCopyWithAttributes(f, size, nil, nil) }
+        let featureSettings: [[CFString: Any]] = [[
+            kCTFontFeatureTypeIdentifierKey: 35,     // Stylistic Alternatives
+            kCTFontFeatureSelectorIdentifierKey: 4,   // ss02: Alternate medial Meem + final Alef
+        ]]
+        let attrDesc = CTFontDescriptorCreateWithAttributes([
+            kCTFontFeatureSettingsAttribute: featureSettings,
+        ] as CFDictionary)
+
+        if let f = amiriQuran { return CTFontCreateCopyWithAttributes(f, size, nil, attrDesc) }
+        if let f = amiriQuranColored { return CTFontCreateCopyWithAttributes(f, size, nil, attrDesc) }
         let families = [
             "Amiri Quran",
             "AmiriQuran",
@@ -94,7 +102,7 @@ public final class FontManager: @unchecked Sendable {
         ]
         for family in families {
             if let font = font(family: family, size: size) {
-                return font
+                return CTFontCreateCopyWithAttributes(font, size, nil, attrDesc)
             }
         }
         return nil

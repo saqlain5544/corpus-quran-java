@@ -7,11 +7,27 @@ public enum MaddRule: Sendable {
     case munfasil
 }
 
+public enum MaddLetterClass: Sendable {
+    case alif
+    case waw
+    case ya
+    case alifMaksura
+}
+
 public struct MaddMatch: Sendable {
     public let rule: MaddRule
+    public let letterClass: MaddLetterClass
 
-    public init(rule: MaddRule) {
+    public init(rule: MaddRule, letterClass: MaddLetterClass) {
         self.rule = rule
+        self.letterClass = letterClass
+    }
+
+    public var tracking: CGFloat {
+        switch letterClass {
+        case .alif, .waw:     return 0.6
+        case .ya, .alifMaksura: return 0.4
+        }
     }
 }
 
@@ -28,8 +44,12 @@ public enum MaddDetector {
     private static let cpMaddah: UInt32 = 0x0653
     private static let diacriticRange: ClosedRange<UInt32> = 0x064B...0x0654
 
-    private static let hamzahSet: Set<UInt32> = [
-        0x0621, 0x0622, 0x0623, 0x0625, 0x0626,
+    private static let hamzahSet: Set<UInt32> = [0x0621, 0x0622, 0x0623, 0x0625, 0x0626]
+
+    // Unicode 17.0 ArabicShaping.txt — Joining_Type R (Right_Joining)
+    private static let rightOnlySet: Set<UInt32> = [
+        0x0622, 0x0623, 0x0624, 0x0625, 0x0627, 0x0629,
+        0x062F, 0x0630, 0x0631, 0x0632, 0x0648,
     ]
 
     private struct Token {
@@ -45,6 +65,14 @@ public enum MaddDetector {
         let isWaw: Bool
         let isYa: Bool
         let isAlifMaksura: Bool
+        let isRightOnly: Bool
+        var maddLetterClass: MaddLetterClass? {
+            if isAlif { return .alif }
+            if isWaw { return .waw }
+            if isYa { return .ya }
+            if isAlifMaksura { return .alifMaksura }
+            return nil
+        }
     }
 
     private static func tokenize(_ word: String) -> [Token] {
@@ -78,7 +106,8 @@ public enum MaddDetector {
                 isAlif: cp == cpAlif,
                 isWaw: cp == cpWaw,
                 isYa: cp == cpYa,
-                isAlifMaksura: cp == cpAlifMaksura
+                isAlifMaksura: cp == cpAlifMaksura,
+                isRightOnly: rightOnlySet.contains(cp)
             ))
         }
         return tokens
@@ -86,9 +115,9 @@ public enum MaddDetector {
 
     private enum State {
         case idle
-        case vowelFatha(Int)
-        case vowelDamma(Int)
-        case vowelKasra(Int)
+        case vowelFatha
+        case vowelDamma
+        case vowelKasra
     }
 
     private static func findMatch(in tokens: [Token]) -> MaddMatch? {
@@ -102,9 +131,9 @@ public enum MaddDetector {
             switch state {
             case .idle:
                 if !t.hasSukun, !t.hasShaddah {
-                    if t.hasFatha { state = .vowelFatha(t.scalarIndex) }
-                    else if t.hasDamma { state = .vowelDamma(t.scalarIndex) }
-                    else if t.hasKasra { state = .vowelKasra(t.scalarIndex) }
+                    if t.hasFatha { state = .vowelFatha }
+                    else if t.hasDamma { state = .vowelDamma }
+                    else if t.hasKasra { state = .vowelKasra }
                 }
 
             case .vowelFatha:
@@ -142,25 +171,26 @@ public enum MaddDetector {
     }
 
     private static func transition(from state: inout State, token t: Token) {
-        let vowel = vowel(on: t)
-        if vowel == nil || t.hasSukun || t.hasShaddah { state = .idle; return }
-        state = vowel!
+        let v = vowel(on: t)
+        if v == nil || t.hasSukun || t.hasShaddah { state = .idle; return }
+        state = v!
     }
 
     private static func vowel(on t: Token) -> State? {
-        if t.hasFatha { return .vowelFatha(t.scalarIndex) }
-        if t.hasDamma { return .vowelDamma(t.scalarIndex) }
-        if t.hasKasra { return .vowelKasra(t.scalarIndex) }
+        if t.hasFatha { return .vowelFatha }
+        if t.hasDamma { return .vowelDamma }
+        if t.hasKasra { return .vowelKasra }
         return nil
     }
 
     private static func classify(maddToken: Token, next: Token?, nextNext: Token?) -> MaddMatch? {
+        guard let letterClass = maddToken.maddLetterClass else { return nil }
         guard let n = next else { return nil }
-        if n.hasShaddah { return MaddMatch(rule: .laazimKalami) }
+        if n.hasShaddah { return MaddMatch(rule: .laazimKalami, letterClass: letterClass) }
         if n.hasMaddah, let nn = nextNext, nn.hasShaddah {
-            return MaddMatch(rule: .laazimKalami)
+            return MaddMatch(rule: .laazimKalami, letterClass: letterClass)
         }
-        if n.isHamzah { return MaddMatch(rule: .muttasil) }
+        if n.isHamzah { return MaddMatch(rule: .muttasil, letterClass: letterClass) }
         return nil
     }
 
@@ -187,8 +217,8 @@ public enum MaddDetector {
         guard tokens.count == 1 else { return nil }
         let t = tokens[0]
         guard !t.hasSukun, !t.hasShaddah else { return nil }
-        if t.hasFatha && (t.isAlif || t.isWaw || t.isYa || t.isAlifMaksura) {
-            return MaddMatch(rule: .laazimHarfi)
+        if let letterClass = t.maddLetterClass, t.hasFatha {
+            return MaddMatch(rule: .laazimHarfi, letterClass: letterClass)
         }
         return nil
     }
