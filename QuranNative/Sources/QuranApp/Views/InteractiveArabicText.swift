@@ -95,8 +95,7 @@ struct InteractiveArabicText: View {
         let count: Int
         switch m.rule {
         case .laazimKalami, .laazimHarfi: count = maddLaazimCount
-        case .muttasil, .aarid, .leen:     count = maddMuttasilCount
-        case .munfasil:                      count = maddMuttasilCount
+        case .muttasil, .munfasil:        count = maddMuttasilCount
         }
         return MaddDetector.applyElongation(to: entry.text, match: m, count: count)
     }
