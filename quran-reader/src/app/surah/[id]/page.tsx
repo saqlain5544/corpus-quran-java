@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { QuranHtmlEnhancer } from "@/components/QuranHtmlEnhancer";
 import { readSurahHtml, extractTitle, extractMain, SURAH_NAMES_INTERNAL } from "@/lib/html-surah";
 
 export { SURAH_NAMES_INTERNAL };
@@ -37,12 +38,7 @@ export default async function SurahPage({ params }: Props) {
     <div className="flex flex-col min-h-screen">
       <SurahNavBar surahNumber={n} />
 
-      <main
-        className="flex-1 max-w-3xl mx-auto px-4 sm:px-6 py-6 w-full quran-html-body"
-        dir="rtl"
-        lang="ar"
-        dangerouslySetInnerHTML={{ __html: main }}
-      />
+      <QuranHtmlEnhancer html={main} />
 
       <BottomNav surahNumber={n} />
     </div>
