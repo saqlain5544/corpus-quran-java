@@ -1,13 +1,55 @@
-__pycache__/
-*.py[cod]
-*.egg-info/
-dist/
-.cache/
-.DS_Store
-*.tmp
-character_frequency.csv
-data/
-webapp/
-QuranNative/.build/
-QuranNative/.swiftpm/
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
 
+# Build outputs
+.next/
+out/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Prisma SQLite DB
+prisma/*.db
+prisma/*.db-journal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Next.js dev artifacts
+.next/
+
+# OS / scratch
+.tmp/
+
+# Working copy of surahs-html — regenerate by copying
+quran-html/

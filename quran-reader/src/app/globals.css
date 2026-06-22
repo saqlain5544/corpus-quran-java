@@ -1,0 +1,536 @@
+@import "tailwindcss";
+
+/* Hafs Quranic font is loaded by next/font/local in app/layout.tsx
+   and exposed as the --font-hafs CSS variable on <html>. */
+
+:root {
+  /* ── Light theme — editorial paper ────────────────────────── */
+  --background: #f8f6f1;
+  --foreground: #1a1916;
+  --card: #ffffff;
+  --card-hover: #efece4;
+  --border: #e2ddd2;
+  --border-strong: #c8c2b3;
+  --accent: #0a5e3f;
+  --accent-hover: #084d33;
+  --accent-light: #e4efe8;
+  --accent-glow: rgba(10, 94, 63, 0.16);
+  --muted: #6a6457;
+  --muted-light: #96918a;
+  --quran-text: #14110d;
+  --quran-bg: #faf8f3;
+  --quran-border: rgba(10, 94, 63, 0.08);
+  --verse-hover: #efece4;
+  --divider: #c8c2b3;
+  --grid-color: rgba(26, 25, 22, 0.045);
+  --grid-color-major: rgba(26, 25, 22, 0.085);
+  --shadow-sm: 0 1px 2px rgba(20, 17, 13, 0.04);
+  --shadow-md: 0 4px 12px rgba(20, 17, 13, 0.08);
+  --shadow-lg: 0 12px 32px rgba(20, 17, 13, 0.12);
+  --shadow-xl: 0 24px 64px rgba(20, 17, 13, 0.18);
+  --color-rose: #c0392b;
+  --color-amber: #b45309;
+  --color-emerald: #059669;
+  --color-sky: #0369a1;
+  --color-violet: #6d28d9;
+  --color-fuchsia: #a21caf;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0b09;
+    --foreground: #ece8df;
+    --card: #131210;
+    --card-hover: #1c1a18;
+    --border: #2a2724;
+    --border-strong: #3a3530;
+    --accent: #c9a96a;
+    --accent-hover: #d8b97a;
+    --accent-light: #1f1c14;
+    --accent-glow: rgba(201, 169, 106, 0.20);
+    --muted: #98928a;
+    --muted-light: #6b6660;
+    --quran-text: #f5f1e6;
+    --quran-bg: #100e0b;
+    --quran-border: rgba(201, 169, 106, 0.10);
+    --verse-hover: #181614;
+    --divider: #2a2724;
+    --grid-color: rgba(236, 232, 223, 0.035);
+    --grid-color-major: rgba(236, 232, 223, 0.075);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.6);
+    --color-rose: #f87171;
+    --color-amber: #fbbf24;
+    --color-emerald: #6ee7b7;
+    --color-sky: #7dd3fc;
+    --color-violet: #c4b5fd;
+    --color-fuchsia: #f0abfc;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-light: var(--accent-light);
+  --color-accent-glow: var(--accent-glow);
+  --color-muted: var(--muted);
+  --color-muted-light: var(--muted-light);
+  --color-quran-text: var(--quran-text);
+  --color-quran-bg: var(--quran-bg);
+  --color-quran-border: var(--quran-border);
+  --color-verse-hover: var(--verse-hover);
+  --color-divider: var(--divider);
+  --font-arabic: var(--font-hafs, "KFGQPC HAFS Uthmanic Script", "KFGQPC Uthmanic Script HAFS"), "Traditional Arabic", "Scheherazade New", serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-serif: ui-serif, Georgia, "Iowan Old Style", "Apple Garamond", serif;
+}
+
+/* ── Base ─────────────────────────────────────────────────── */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  background-image:
+    /* minor dots every 24px */
+    radial-gradient(circle, var(--grid-color) 1px, transparent 1.5px),
+    /* major dots every 96px */
+    radial-gradient(circle, var(--grid-color-major) 1.5px, transparent 2.5px);
+  background-size: 24px 24px, 96px 96px;
+  background-position: 0 0, 0 0;
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv11";
+}
+
+/* ── Arabic ──────────────────────────────────────────────── */
+
+.arabic {
+  font-family: var(--font-arabic);
+  direction: rtl;
+  line-height: 2.2;
+}
+
+.quran-paragraph {
+  font-family: var(--font-arabic);
+  direction: rtl;
+  line-height: 2.4;
+  font-size: 1.625rem;
+  color: var(--quran-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  .quran-paragraph {
+    text-shadow: none;
+  }
+}
+
+/* ── Editorial accents ───────────────────────────────────── */
+
+.serif { font-family: var(--font-serif); }
+
+.smallcaps {
+  font-variant-caps: all-small-caps;
+  letter-spacing: 0.08em;
+}
+
+.rule {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+.rule-strong {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  margin: 0;
+}
+
+.rule-double {
+  border: 0;
+  border-top: 3px double var(--border-strong);
+  margin: 0;
+}
+
+/* ── Surah title ornament ────────────────────────────────── */
+
+.surah-title-frame {
+  position: relative;
+  padding: 0.25rem 0;
+}
+
+.surah-title-frame::before,
+.surah-title-frame::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 60px;
+  height: 1px;
+  background: var(--border-strong);
+}
+
+.surah-title-frame::before { right: calc(100% + 18px); }
+.surah-title-frame::after { left: calc(100% + 18px); }
+
+@media (max-width: 640px) {
+  .surah-title-frame::before,
+  .surah-title-frame::after { display: none; }
+}
+
+/* ── Scrollbar (minimal, editorial) ──────────────────────── */
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+  background-clip: padding-box;
+}
+
+/* ── Animations ──────────────────────────────────────────── */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.verse-enter { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-enter { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.tooltip-enter { animation: scaleIn 0.15s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* ── Word interactions ───────────────────────────────────── */
+
+.word-clickable {
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 -2px;
+  position: relative;
+}
+
+.word-clickable:hover {
+  color: var(--accent);
+  background-color: var(--accent-light);
+}
+
+.word-selected {
+  color: var(--accent);
+  background-color: var(--accent-light);
+  border-radius: 3px;
+  padding: 0 2px;
+  margin: 0 -2px;
+}
+
+/* ── Pause mark (very subtle) ────────────────────────────── */
+
+.pause-mark {
+  color: var(--muted-light);
+  opacity: 0.32;
+  user-select: none;
+  margin: 0 1px;
+  font-size: 0.85em;
+}
+
+/* ── Verse row (editorial, transparent, no card) ────────── */
+
+.verse-row {
+  position: relative;
+  padding: 0.125rem 0;
+  /* No border-top — verses flow into each other on the dotted grid */
+  transition: color 0.2s ease;
+}
+
+/* Every Arabic block sets the font-family explicitly so Hafs is
+   always applied to each verse and every word, even if a child
+   element has its own font-family (e.g. tooltip Row labels). */
+.arabic,
+.verse-text,
+.verse-word {
+  font-family: var(--font-arabic);
+  font-weight: 400;
+  font-style: normal;
+}
+
+/* ── Tanzil.net-style pause + ayah marks ────────────────────── */
+
+/* Pause mark (ۖۗ etc.) — tanzil renders these smaller and low-contrast
+   so the reader's eye flows past them. Size: 0.85em, muted, opacity 0.5. */
+.sign {
+  font-family: var(--font-arabic);
+  font-size: 0.85em;
+  color: var(--muted);
+  opacity: 0.5;
+  user-select: none;
+  display: inline-block;
+  vertical-align: baseline;
+  margin: 0 0.05em;
+  background: transparent !important;
+  padding: 0 !important;
+  cursor: default;
+}
+
+/* Verse-end marker ﴾N﴾ — tanzil renders these as 0.91em with low
+   contrast. Brightens slightly on verse hover. */
+.ayaNumber {
+  font-family: var(--font-arabic);
+  font-size: 0.91em;
+  color: var(--muted);
+  opacity: 0.7;
+  margin: 0 0.2em;
+  user-select: none;
+  transition: color 0.2s ease, opacity 0.2s ease;
+  display: inline-block;
+  font-weight: 400;
+  white-space: nowrap;
+  background: transparent !important;
+  cursor: default;
+  padding: 0 !important;
+  border-radius: 0;
+  vertical-align: baseline;
+}
+
+.verse-row:hover .ayaNumber {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* Legacy class (used elsewhere for the top-of-verse marker) */
+.verse-number {
+  font-family: var(--font-serif);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  user-select: none;
+}
+
+.verse-row .verse-number {
+  transition: color 0.2s ease, transform 0.2s ease;
+  display: inline-block;
+  transform-origin: left center;
+}
+
+.verse-row:hover .verse-number {
+  color: var(--accent);
+  transform: scale(1.15);
+}
+
+/* Hash-scroll target offset — accounts for the sticky app bar
+   (36px) + sticky surah header (40px) + sticky mushaf header (sticky
+   to its container; we set a comfortable offset of 80px). */
+[id^="verse-"] {
+  scroll-margin-top: 80px;
+}
+
+/* Arabic verse number (used in translation row) */
+.verse-number-ar {
+  font-family: var(--font-arabic);
+  font-size: 0.875rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* ── Surah header ornament (legacy) ──────────────────────── */
+
+.surah-header {
+  position: relative;
+  padding: 1.5rem 0;
+}
+
+/* ── Glass effect ───────────────────────────────────────── */
+
+/* Translucent backdrop blur. The border-bottom is intentionally
+   absent so the global masthead doesn't draw a second hairline
+   right next to the SurahHeader's own divider — together they
+   read as one stacked element instead of two close borders. */
+.glass {
+  background: color-mix(in srgb, var(--background) 78%, transparent);
+  backdrop-filter: blur(12px) saturate(180%);
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+}
+
+.glass-strong {
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Sticky ayah header (sits below the global masthead + surah header,
+   sticks while user scrolls through the mushaf text) */
+.ayah-sticky-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--background) 96%, transparent);
+  backdrop-filter: blur(16px) saturate(180%);
+  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  border-bottom: 1px solid var(--border);
+  padding: 0.5rem 0;
+  margin-bottom: 0.5rem;
+}
+
+/* ── Skeleton ────────────────────────────────────────────── */
+
+@keyframes shimmer {
+  0% { background-position: -1000px 0; }
+  100% { background-position: 1000px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg,
+    var(--card-hover) 0%,
+    var(--border) 50%,
+    var(--card-hover) 100%);
+  background-size: 1000px 100%;
+  animation: shimmer 2s infinite linear;
+  border-radius: 4px;
+}
+
+/* ── Morpheme colors ─────────────────────────────────────── */
+
+.morpheme-prefix { color: var(--color-sky); }
+.morpheme-stem { color: var(--color-emerald); }
+.morpheme-suffix { color: var(--color-amber); }
+.morpheme-i3rab { color: var(--color-violet); }
+
+/* ── Focus rings ─────────────────────────────────────────── */
+
+*:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ── Selection ───────────────────────────────────────────── */
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--foreground);
+}
+
+/* ── Bookmark pulse ──────────────────────────────────────── */
+
+@keyframes bookmarkPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+.bookmark-active { animation: bookmarkPop 0.3s ease-out; }
+
+/* ── Toast ───────────────────────────────────────────────── */
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.toast { animation: toastIn 0.25s ease-out; }
+
+/* ── Live indicator ──────────────────────────────────────── */
+
+@keyframes livePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.live-dot { animation: livePulse 2s ease-in-out infinite; }
+
+/* ── HTML-surah rendering (quran-html/ source) ─────────── */
+
+.quran-html-body main.quran {
+  display: block;
+}
+
+.quran-html-body .surah-header {
+  text-align: center;
+  padding: 2rem 0 1.5rem;
+  border-bottom: 1px solid var(--color-quran-border);
+  margin-bottom: 2rem;
+}
+
+.quran-html-body .surah-name {
+  font-family: var(--font-arabic, "Amiri Quran", serif);
+  font-size: 2.75rem;
+  color: var(--color-quran-text);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.quran-html-body section.ayah {
+  margin-bottom: 2.25rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--color-quran-border);
+}
+.quran-html-body section.ayah:last-child {
+  border-bottom: none;
+}
+
+.quran-html-body .ayah-number {
+  display: inline-block;
+  font-family: serif;
+  font-size: 0.95rem;
+  color: var(--color-muted, #888);
+  margin: 0 0 0.75rem;
+  font-weight: 500;
+}
+
+.quran-html-body .ayah-text {
+  font-family: var(--font-arabic, "Amiri Quran", serif);
+  font-size: 1.75rem;
+  line-height: 2.4;
+  color: var(--color-quran-text);
+  text-align: justify;
+  text-justify: inter-word;
+  margin: 0;
+}
+
+.quran-html-body .quran-word {
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+  padding: 0 0.05em;
+  border-radius: 2px;
+}
+.quran-html-body .quran-word:hover {
+  background-color: rgba(201, 169, 106, 0.18);
+  color: var(--color-accent, #b08038);
+}
+
+.quran-html-body .quran-mark {
+  display: inline-block;
+  margin: 0 0.1em;
+  font-size: 0.85em;
+  color: var(--color-accent, #b08038);
+  vertical-align: middle;
+}
+.quran-html-body .quran-mark.waqf { color: #c2410c; }
+.quran-html-body .quran-mark.ayah-marker { color: var(--color-accent, #b08038); font-size: 1em; }
+.quran-html-body .quran-mark.division-marker { color: #7c2d12; }
+.quran-html-body .quran-mark.sajdah { color: #047857; }
