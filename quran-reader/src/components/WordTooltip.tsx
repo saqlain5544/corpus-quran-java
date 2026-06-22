@@ -1,164 +1,124 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
+import { usePosition } from "@/hooks/usePosition";
 import { translate, translateShort } from "@/lib/translate";
 
 interface WordTooltipProps {
-  /** The word span being hovered — its data-* attrs are the source of truth. */
+  /** The `.quran-word` span being hovered — its `data-*` attrs are the
+   *  source of truth for the tooltip content. */
   anchorEl: HTMLElement | null;
   onLeave: () => void;
   onTooltipEnter?: () => void;
 }
 
+const VIEWPORT_PAD = 8;
+const TOOLTIP_GAP = 8;
+const COLOR_DOT: Record<string, string> = {
+  blue: "bg-blue-500",
+  purple: "bg-purple-500",
+  emerald: "bg-emerald-500",
+  amber: "bg-amber-500",
+  teal: "bg-teal-500",
+};
+
 /**
- * Compact floating tooltip.
+ * Floating tooltip that reads word metadata from the hovered span's
+ * `data-*` attributes and positions itself next to it.
  *
- * The hovered word span carries all metadata as `data-*` attributes
- * (set by the SSR VerseView). The tooltip reads them directly — no
- * server call, no client-side tokenization, no prop drilling.
+ * Positioning is delegated to `usePosition` (a layout-effect hook that
+ * measures the anchor + the tooltip, picks above/below, clamps to the
+ * viewport, and tracks scroll/resize).
  *
- * Required attrs on the anchor element:
- *   data-token        Arabic text with diacritics
- *   data-translation  English translation (Word.translation)
- *   data-gloss        Stem-segment gloss
- *   data-pos          Part of speech
- *   data-role         Syntactic role
- *   data-case         Grammatical case
- *   data-root         Arabic root letters
- *   data-lemma        Arabic lemma
+ * The tooltip is **always** rendered (so the layout-effect can measure
+ * it); visibility is driven by `anchorEl` and `pos` via opacity +
+ * visibility. This avoids a mount/unmount flicker on every hover.
  */
 export function WordTooltip({ anchorEl, onLeave, onTooltipEnter }: WordTooltipProps) {
   const tipRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{
-    top: number;
-    left: number;
-    above: boolean;
-  } | null>(null);
+  const pos = usePosition(anchorEl, tipRef.current, {
+    gap: TOOLTIP_GAP,
+    viewportPadding: VIEWPORT_PAD,
+  });
 
-  useEffect(() => {
-    if (!anchorEl) {
-      setPos(null);
-      return;
-    }
-    const recalc = () => {
-      if (!anchorEl || !tipRef.current) return;
-      const a = anchorEl.getBoundingClientRect();
-      const t = tipRef.current.getBoundingClientRect();
-      const gap = 10;
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
+  // Pull all metadata off the anchor's data-* attrs. QuranHtmlEnhancer
+  // sets these on first mouseover from data-morphology JSON.
+  const token = anchorEl?.dataset.token ?? "";
+  const translation = anchorEl?.dataset.translation ?? "";
+  const gloss = anchorEl?.dataset.gloss ?? "";
+  const pos_ = anchorEl?.dataset.pos ?? "";
+  const role = anchorEl?.dataset.role ?? "";
+  const root = anchorEl?.dataset.root ?? "";
+  const lemma = anchorEl?.dataset.lemma ?? "";
+  const case_ = anchorEl?.dataset.case ?? "";
 
-      const cx = a.left + a.width / 2;
-      let left = cx - t.width / 2;
-      left = Math.max(8, Math.min(left, vw - t.width - 8));
-
-      const above =
-        a.top - gap - t.height >= 0 || a.top - gap > vh - a.bottom - gap;
-      const top = above ? a.top - t.height - gap : a.bottom + gap;
-      setPos({ top, left, above });
-    };
-
-    const raf = requestAnimationFrame(() => {
-      requestAnimationFrame(recalc);
-    });
-
-    const onScroll = () => recalc();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, [anchorEl]);
-
-  if (!anchorEl) return null;
-  const above = pos?.above ?? true;
-
-  // Read everything from the DOM — no props, no closure.
-  const token = anchorEl.dataset.token ?? "";
-  const translation = anchorEl.dataset.translation ?? "";
-  const gloss = anchorEl.dataset.gloss ?? "";
-  const pos_ = anchorEl.dataset.pos ?? "";
-  const role = anchorEl.dataset.role ?? "";
-  const root = anchorEl.dataset.root ?? "";
-  const lemma = anchorEl.dataset.lemma ?? "";
-  const case_ = anchorEl.dataset.case ?? "";
+  const visible = anchorEl !== null && pos !== null;
 
   return (
     <div
       ref={tipRef}
-      className="fixed z-100 tooltip-enter pointer-events-auto"
+      role="tooltip"
+      aria-hidden={!visible}
+      onMouseEnter={onTooltipEnter}
+      onMouseLeave={onLeave}
+      className="fixed z-50 pointer-events-auto transition-opacity duration-150"
       style={{
         top: pos?.top ?? -9999,
         left: pos?.left ?? -9999,
-        visibility: pos ? "visible" : "hidden",
-        opacity: pos ? 1 : 0,
-        transition: "opacity 120ms ease-out",
-        maxWidth: "min(320px, calc(100vw - 32px))",
+        opacity: visible ? 1 : 0,
+        visibility: visible ? "visible" : "hidden",
+        maxWidth: `min(320px, calc(100vw - ${VIEWPORT_PAD * 2}px))`,
       }}
-      onMouseLeave={onLeave}
-      onMouseEnter={onTooltipEnter}
     >
-      {/* Arrow */}
-      <div
-        className={`absolute left-1/2 -translate-x-1/2 w-3 h-3 bg-card border-border rotate-45 ${
-          above
-            ? "-bottom-1.5 border-r border-b border-t-transparent border-l-transparent"
-            : "-top-1.5 border-l border-t border-b-transparent border-r-transparent"
-        }`}
-      />
+      {pos && <Arrow placement={pos.placement} anchorX={pos.arrowX} />}
 
-      {/* Card */}
       <div className="bg-card border border-border rounded-xl shadow-xl backdrop-blur-md overflow-hidden">
         {/* Arabic word */}
         <div className="px-5 py-3 bg-quran-bg text-center border-b border-border/50">
-          <p className="arabic text-2xl text-quran-text leading-relaxed" dir="rtl">
+          <p className="arabic text-2xl text-quran-text leading-relaxed break-words" dir="rtl">
             {token}
           </p>
           {(translation || gloss) && (
-            <p className="text-xs text-muted italic mt-1 line-clamp-2">
+            <p className="text-xs text-muted italic mt-1 break-words">
               {translation || gloss}
             </p>
           )}
         </div>
 
-        {/* Attributes */}
+        {/* Attribute rows — each row wraps if the value is long */}
         <div className="px-4 py-3 space-y-1.5">
           {pos_ && pos_ !== "?" && (
             <Row
               label="POS"
               value={translateShort(pos_)}
-              color="blue"
               title={translate(pos_)}
+              color="blue"
             />
           )}
           {role && role !== "?" && (
             <Row
               label="Role"
               value={translateShort(role)}
-              color="purple"
               title={translate(role)}
+              color="purple"
             />
           )}
           {root && (
             <Row
               label="Root"
               value={root}
-              color="emerald"
               title="Open root meaning"
+              color="emerald"
               isArabic
             />
           )}
-          {lemma && (
-            <Row label="Lemma" value={lemma} color="amber" isArabic />
-          )}
+          {lemma && <Row label="Lemma" value={lemma} color="amber" isArabic />}
           {case_ && (
             <Row
               label="Case"
               value={translateShort(case_)}
-              color="teal"
               title={translate(case_)}
+              color="teal"
             />
           )}
         </div>
@@ -185,6 +145,23 @@ export function WordTooltip({ anchorEl, onLeave, onTooltipEnter }: WordTooltipPr
   );
 }
 
+function Arrow({ placement, anchorX }: { placement: "above" | "below"; anchorX: number }) {
+  const isAbove = placement === "above";
+  return (
+    <div
+      aria-hidden
+      className={`absolute w-3 h-3 bg-card border-border ${
+        isAbove ? "border-r border-b" : "border-l border-t"
+      }`}
+      style={{
+        left: `${anchorX}px`,
+        transform: "translateX(-50%) rotate(45deg)",
+        [isAbove ? "bottom" : "top"]: "-7px",
+      }}
+    />
+  );
+}
+
 function Row({
   label,
   value,
@@ -194,25 +171,16 @@ function Row({
 }: {
   label: string;
   value: string;
-  color: "blue" | "purple" | "emerald" | "amber" | "teal";
+  color: keyof typeof COLOR_DOT;
   title?: string;
   isArabic?: boolean;
 }) {
-  const colors: Record<string, string> = {
-    blue: "bg-blue-500",
-    purple: "bg-purple-500",
-    emerald: "bg-emerald-500",
-    amber: "bg-amber-500",
-    teal: "bg-teal-500",
-  };
   return (
-    <div className="flex items-center gap-2 text-xs" title={title}>
-      <span
-        className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${colors[color]}`}
-      />
+    <div className="flex items-baseline gap-2 text-xs" title={title}>
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 translate-y-[1px] ${COLOR_DOT[color]}`} />
       <span className="text-muted w-10 flex-shrink-0">{label}</span>
       <span
-        className={`font-medium text-foreground truncate ${
+        className={`font-medium text-foreground break-words min-w-0 ${
           isArabic ? "arabic text-base" : ""
         }`}
         dir={isArabic ? "rtl" : undefined}
