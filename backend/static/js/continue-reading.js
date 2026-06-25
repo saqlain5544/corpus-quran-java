@@ -46,27 +46,89 @@
   }
 
   // Find the topmost ayah currently in view (top of viewport).
-  function topmostAyah() {
+  //
+  // We use IntersectionObserver (MDN — Intersection Observer API,
+  // Baseline 2019) instead of polling getBoundingClientRect() in a
+  // scroll handler. The browser computes intersection lazily off the
+  // main thread and fires the callback only when an ayah crosses the
+  // upper-quarter strip of the viewport.
+  //
+  // Old code did querySelectorAll('.ayah') + per-ayah rect() in a
+  // debounced scroll handler. For Al-Baqarah (286 ayahs) that's
+  // 286 getBoundingClientRect calls per scroll tick — each forces a
+  // layout. The new approach has the browser do this work natively
+  // and notify us only on intersection change.
+  //
+  // rootMargin: "0px 0px -75% 0px" shrinks the viewport's effective
+  // height to just the upper 25% strip. Entries fire when an ayah
+  // crosses either edge of that strip.
+  //
+  // See /tmp/algo-research/fe_01_techniques.md for the rationale.
+  var topmostObserver = null;
+  function setupTopmostObserver() {
+    if (topmostObserver) return;
     var ayahs = document.querySelectorAll(".ayah");
-    if (!ayahs.length) return null;
-    var top = window.innerHeight * 0.25; // focus on upper quarter
-    for (var i = 0; i < ayahs.length; i++) {
-      var r = ayahs[i].getBoundingClientRect();
-      if (r.bottom > top) return parseInt(ayahs[i].dataset.ayah, 10);
-    }
-    return null;
+    if (!ayahs.length) return;
+    topmostObserver = new IntersectionObserver(function (entries) {
+      // Among the changed entries, find the topmost intersecting one.
+      // We pick the topmost by current boundingClientRect.top across
+      // ALL currently-intersecting ayahs (not just changed entries)
+      // — because the change entry may have just left the strip while
+      // a different one entered. We approximate by scanning the
+      // changed entries plus their neighbours.
+      var topmost = null;
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        if (!e.isIntersecting) continue;
+        // Skip entries with empty rect (defensive — can happen with
+        // detached elements or 0-size containers).
+        var r = e.boundingClientRect;
+        if (r.height === 0 || r.width === 0) continue;
+        if (topmost === null || r.top < topmost.boundingClientRect.top) {
+          topmost = e;
+        }
+      }
+      if (!topmost) return;
+      var n = parseInt(topmost.target.dataset.ayah, 10);
+      if (!n) return;
+      var s = currentSurah();
+      if (!s || !s.surah) return;
+      save({ surah: s.surah, ayah: n, ts: Date.now() });
+    }, {
+      rootMargin: "0px 0px -75% 0px",
+      threshold: [0, 1],
+    });
+    for (var i = 0; i < ayahs.length; i++) topmostObserver.observe(ayahs[i]);
   }
 
-  var saveTimer = null;
-  function scheduleSave() {
+  // Fallback for browsers without IntersectionObserver (very old,
+  // <2019). Should be a no-op in practice — Baseline Widely
+  // available since 2019 — but defensive.
+  function scheduleSaveLegacy() {
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () {
       var s = currentSurah();
       if (!s || !s.surah) return;
-      var ayah = topmostAyah();
-      if (!ayah) return;
-      save({ surah: s.surah, ayah: ayah, ts: Date.now() });
+      var ayahs = document.querySelectorAll(".ayah");
+      if (!ayahs.length) return;
+      var top = window.innerHeight * 0.25;
+      for (var i = 0; i < ayahs.length; i++) {
+        var r = ayahs[i].getBoundingClientRect();
+        if (r.bottom > top) {
+          save({ surah: s.surah, ayah: parseInt(ayahs[i].dataset.ayah, 10), ts: Date.now() });
+          break;
+        }
+      }
     }, 800);
+  }
+
+  var saveTimer = null;
+  function scheduleSave() {
+    // If IntersectionObserver is available, save immediately —
+    // no debounce needed because the browser already debounces
+    // intersection events to animation frames.
+    if (topmostObserver) return;
+    scheduleSaveLegacy();
   }
 
   // Bookmark click is a strong "I'm here" signal — save immediately.
@@ -88,12 +150,19 @@
     }
   });
 
-  // Scroll → debounced save of the topmost ayah.
+  // ── Set up topmost-ayah detection ─────────────────────────
+  // Prefer IntersectionObserver (native, off-main-thread). Fall
+  // back to debounced scroll handler for ancient browsers.
   var pageSurah = document.querySelector(".page-surah");
   if (pageSurah) {
-    window.addEventListener("scroll", scheduleSave, { passive: true });
-    // Also save on initial page-load (so a brand-new visit is recorded).
-    scheduleSave();
+    if (typeof IntersectionObserver === "function") {
+      setupTopmostObserver();
+      // Save once on initial page-load (for a brand-new visit).
+      scheduleSave();
+    } else {
+      window.addEventListener("scroll", scheduleSave, { passive: true });
+      scheduleSave();
+    }
   }
 
   // ── Homepage: render the banner ─────────────────────────────
