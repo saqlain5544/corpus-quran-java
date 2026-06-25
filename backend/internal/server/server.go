@@ -11,9 +11,11 @@ import (
 	"log/slog"
 	"net/http"
 	"path"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"quranreader/backend/internal/data"
@@ -283,15 +285,23 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build per-ayah page data with root lookups pre-computed.
+	// Each ayah is independent (read-only ByLoc + own per-ayah map),
+	// so we process ayahs in parallel chunks. Chunk size balances
+	// goroutine count against work-per-task: too small and we
+	// pay goroutine setup overhead; too large and the longest
+	// ayah (long tail of Al-Baqarah) dominates one worker.
 	type ayahEntry struct {
 		Ayah      *types.Ayah
 		WordRoots map[int]string
 	}
-	ayahEntries := make([]ayahEntry, 0, len(surah.Ayahs))
-	for an := 1; an <= len(surah.Ayahs); an++ {
+	const chunkSize = 16
+	totalAyahs := len(surah.Ayahs)
+	ayahEntries := make([]ayahEntry, totalAyahs)
+
+	buildEntry := func(an int) ayahEntry {
 		ay := surah.Ayahs[an]
 		if ay == nil {
-			continue
+			return ayahEntry{}
 		}
 		wr := map[int]string{}
 		for _, t := range ay.Tokens {
@@ -302,8 +312,29 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		ayahEntries = append(ayahEntries, ayahEntry{Ayah: ay, WordRoots: wr})
+		return ayahEntry{Ayah: ay, WordRoots: wr}
 	}
+
+	var (
+		wg   sync.WaitGroup
+		sem  = make(chan struct{}, runtime.GOMAXPROCS(0))
+	)
+	for start := 1; start <= totalAyahs; start += chunkSize {
+		end := start + chunkSize - 1
+		if end > totalAyahs {
+			end = totalAyahs
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(s, e int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			for an := s; an <= e; an++ {
+				ayahEntries[an-1] = buildEntry(an)
+			}
+		}(start, end)
+	}
+	wg.Wait()
 
 	type transOption struct {
 		Idx   int

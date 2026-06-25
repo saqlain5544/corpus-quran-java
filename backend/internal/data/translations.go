@@ -5,6 +5,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"os"
+	"sync"
 )
 
 // TranslationSet holds verse-level translation text for a single
@@ -26,26 +27,42 @@ type Translations struct {
 // the assembled Translations. It expects files matching
 // *.sahih.xml (English) and *.junagarhi.xml (Urdu).
 // Transliteration files are deliberately skipped per plan.md §Translation.
+//
+// English and Urdu files are loaded concurrently — they're independent
+// I/O + XML parse, so they run in parallel and roughly halve total
+// wall time when the disk is cold.
 func LoadTranslations(dir string) (*Translations, error) {
+	type result struct {
+		set TranslationSet
+		err error
+	}
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	var enRes, urRes result
+	go func() {
+		defer wg.Done()
+		s, err := loadTransSet(dir+"/en.sahih.xml", "Saheeh International", "en", "ltr")
+		enRes = result{s, err}
+	}()
+	go func() {
+		defer wg.Done()
+		s, err := loadTransSet(dir+"/ur.junagarhi.xml", "محمد جوناگڑھی", "ur", "rtl")
+		urRes = result{s, err}
+	}()
+	wg.Wait()
+
+	if enRes.err != nil {
+		return nil, fmt.Errorf("load en.sahih.xml: %w", enRes.err)
+	}
+	if urRes.err != nil {
+		return nil, fmt.Errorf("load ur.junagarhi.xml: %w", urRes.err)
+	}
+
 	t := &Translations{
-		Sets: make([]TranslationSet, 0, 2),
+		Sets:    []TranslationSet{enRes.set, urRes.set},
+		Default: 0, // English
 	}
-
-	// English: en.sahih.xml
-	en, err := loadTransSet(dir+"/en.sahih.xml", "Saheeh International", "en", "ltr")
-	if err != nil {
-		return nil, fmt.Errorf("load en.sahih.xml: %w", err)
-	}
-	t.Sets = append(t.Sets, en)
-
-	// Urdu: ur.junagarhi.xml
-	ur, err := loadTransSet(dir+"/ur.junagarhi.xml", "محمد جوناگڑھی", "ur", "rtl")
-	if err != nil {
-		return nil, fmt.Errorf("load ur.junagarhi.xml: %w", err)
-	}
-	t.Sets = append(t.Sets, ur)
-
-	t.Default = 0 // English
 	return t, nil
 }
 

@@ -17,6 +17,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"time"
 
 	"quranreader/backend/internal/data"
@@ -84,31 +85,51 @@ func main() {
 		"duration_ms", time.Since(startLoad).Milliseconds(),
 	)
 
-	// Load verse-level translations (optional).
-	var translations *data.Translations
-	if *transDir != "" {
-		translations, err = data.LoadTranslations(*transDir)
-		if err != nil {
-			logger.Warn("load translations", "err", err)
-			translations = nil // serve without translations
-		} else {
-			logger.Info("translations loaded",
-				"sets", len(translations.Sets),
-			)
+	// Load verse-level translations (optional) and concordance
+	// (optional) in parallel. They're independent I/O-bound paths so
+	// running them concurrently shaves noticeable time off startup
+	// when the disk cache is cold.
+	var (
+		translations  *data.Translations
+		concordance   *data.Concordance
+		loadWg        sync.WaitGroup
+		transErr, conErr error
+	)
+	loadWg.Add(2)
+	go func() {
+		defer loadWg.Done()
+		if *transDir == "" {
+			return
 		}
+		t, err := data.LoadTranslations(*transDir)
+		if err != nil {
+			transErr = err
+			return
+		}
+		translations = t
+	}()
+	go func() {
+		defer loadWg.Done()
+		conPath := "./data/morphology/concordance.jsonl"
+		c, err := data.LoadConcordance(conPath)
+		if err != nil {
+			conErr = err
+			return
+		}
+		concordance = c
+	}()
+	loadWg.Wait()
+	if transErr != nil {
+		logger.Warn("load translations", "err", transErr)
+		translations = nil
+	} else if translations != nil {
+		logger.Info("translations loaded", "sets", len(translations.Sets))
 	}
-
-	// Load concordance (optional).
-	var concordance *data.Concordance
-	conPath := "./data/morphology/concordance.jsonl"
-	concordance, err = data.LoadConcordance(conPath)
-	if err != nil {
-		logger.Warn("load concordance", "err", err)
+	if conErr != nil {
+		logger.Warn("load concordance", "err", conErr)
 		concordance = nil
-	} else {
-		logger.Info("concordance loaded",
-			"roots", len(concordance.ByRoot),
-		)
+	} else if concordance != nil {
+		logger.Info("concordance loaded", "roots", len(concordance.ByRoot))
 	}
 
 	srv, err := server.New(q, m, r, meta, server.Options{
