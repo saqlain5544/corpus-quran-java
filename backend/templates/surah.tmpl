@@ -58,22 +58,48 @@
   <article class="quran" lang="ar" dir="rtl">
     {{range $i, $ae := .AyahEntries}}
       {{$an := $ae.Ayah.Number}}
+      {{/*
+        Count word tokens to find the last-word index. Word numbers are
+        1-based and only count "word" tokens (marks do not increment the
+        counter), so the largest WordNo in the slice is the last word.
+        We pre-compute it in a single pass to avoid inline conditionals
+        during the render loop.
+      */}}
+      {{$lastWordNo := 0}}
+      {{range $t := $ae.Ayah.Tokens}}{{if eq $t.Kind "word"}}{{if gt $t.WordNo $lastWordNo}}{{$lastWordNo = $t.WordNo}}{{end}}{{end}}{{end}}
+
       <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}">
         <p class="ayah-text" lang="ar" dir="rtl">
           {{- range $t := $ae.Ayah.Tokens -}}
             {{- if eq $t.Kind "word" -}}
-              <button type="button" class="word"
-                data-surah="{{$.Surah.Number}}"
-                data-ayah="{{$an}}"
-                data-word="{{$t.WordNo}}"
-                data-root="{{index $ae.WordRoots $t.WordNo}}"
-                data-component="word"
-                aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
+              {{- $isLastWord := eq $t.WordNo $lastWordNo -}}
+              {{/*
+                word-cluster wraps the word button + any trailing marks
+                (pause, sajdah, rub', iqlab, etc.) in a single
+                inline-block + nowrap unit so they cannot be split by
+                line wrap. The last word's cluster also contains the
+                ayah-number SVG so the verse mark always stays with
+                the last word.
+              */}}
+              <span class="word-cluster{{if $isLastWord}} word-cluster--end{{end}}">
+                <button type="button" class="word"
+                  data-surah="{{$.Surah.Number}}"
+                  data-ayah="{{$an}}"
+                  data-word="{{$t.WordNo}}"
+                  data-root="{{index $ae.WordRoots $t.WordNo}}"
+                  data-component="word"
+                  aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
+                {{- if $isLastWord -}}
+                  <svg class="ayah-number" viewBox="0 0 24 24" width="1.4em" height="1.4em" aria-label="Verse {{$an}}">
+                    <circle cx="12" cy="13" r="11" class="ayah-number-bg"/>
+                    <text x="12" y="17" text-anchor="middle" class="ayah-number-text">{{$an}}</text>
+                  </svg>
+                {{- end -}}
+              </span>
             {{- else -}}
               <span class="mark" data-char="{{$t.Value}}">{{$t.Value}}</span>
             {{- end -}}
           {{- end -}}
-          <span class="ayah-number" lang="ar" dir="rtl">{{$an}}</span>
         </p>
         <!-- All translations pre-rendered, toggled by JS -->
         {{if $.TransOptions}}

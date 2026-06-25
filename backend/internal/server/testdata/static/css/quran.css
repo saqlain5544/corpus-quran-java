@@ -8,91 +8,403 @@
  * controls; defaults below.
  */
 
+/* Quran page: font-size driven by --fs-quran (JS-controlled) */
+:root {
+	--fs-quran: 22px;
+	--lh-quran: 2;
+}
 .page-surah {
-  --fs-quran: 22px;
-  --lh-quran: 2;
-  font-size: var(--fs-quran);
+	font-size: var(--fs-quran);
 }
 
 .bismillah {
-  font: 700 calc(var(--fs-quran) * 1.3)/calc(var(--lh-quran) * 1.2) var(--font-arabic);
-  text-align: center;
-  color: var(--accent);
-  margin: var(--sp-8) 0;
-  padding: var(--sp-6) 0;
+	font: 700 calc(var(--fs-quran) * 1.3)/calc(var(--lh-quran) * 1.2)
+		var(--font-arabic);
+	text-align: center;
+	color: var(--accent);
+	margin: var(--sp-8) 0;
+	padding: var(--sp-6) 0;
 }
 
 .quran {
-  font: var(--fs-quran)/var(--lh-quran) var(--font-arabic);
-  text-align: justify;
-  text-justify: inter-word;
-  hyphens: none;
-  word-spacing: 0.05em;
+	font: var(--fs-quran)/var(--lh-quran) var(--font-arabic);
+	text-align: justify;
+	text-justify: inter-word;
+	hyphens: none;
+	word-spacing: 0.05em;
 }
 
 .ayah {
-  display: grid;
-  /* In RTL the ayah-number reads more naturally on the right; the
-   * text flows from right to left next to it. */
-  grid-template-columns: 3rem 1fr;
-  column-gap: var(--sp-3);
-  align-items: baseline;
-  margin: var(--sp-6) 0;
-  scroll-margin-top: 8rem; /* offset for sticky header(s) */
-}
-.ayah-number {
-  font: 600 calc(var(--fs-quran) * 0.7)/1 var(--font-arabic);
-  color: var(--accent);
-  text-align: center;
-  padding: var(--sp-1);
+	margin: var(--sp-6) 0;
+	scroll-margin-top: 8rem;
 }
 .ayah-text {
-  margin: 0;
-  padding: 0;
+	margin: 0;
+	padding: 0;
+	display: inline;
+}
+
+/* ── Word cluster (word + trailing marks + ayah number) ──────
+ * Each word and its trailing marks form one non-breaking unit
+ * so they cannot be split across lines by justify-text. The last
+ * cluster in each ayah also contains the inline-SVG ayah-number
+ * so the verse mark always stays with the last word.
+ *
+ *   display: inline-block  — cluster is one "word" for the
+ *                             justify-text algorithm; space is
+ *                             distributed *between* clusters
+ *                             rather than inside them.
+ *   white-space: nowrap    — guarantees the cluster never breaks.
+ */
+.word-cluster {
+	display: inline-block;
+	white-space: nowrap;
+}
+.word-cluster--end {
+	/* Slight space between the last word's marks and the verse
+	 * number — same effect as the original margin-inline-start
+	 * on .ayah-number. */
+	margin-inline-start: var(--sp-1);
+}
+
+/* ── Ayah number (inline SVG) ────────────────────────────────
+ * Per plan.md: "an svg with text inside centered horizontally,
+ * vertically. the svg scales when the number of letters increase
+ * from 1 to 10 then 100. max can be 3 digits."
+ *
+ * The viewBox is fixed at 24×24; the rendered width/height are
+ * proportional to the Quran font size so the SVG scales naturally.
+ * The circle (ayah-number-bg) is the Quran.com-style enclosure
+ * background, the text (ayah-number-text) holds the number.
+ */
+.ayah-number {
+	display: inline-block;
+	vertical-align: middle;
+	margin: 0;
+	flex-shrink: 0;
+}
+.ayah-number-bg {
+	fill: var(--accent);
+	fill-opacity: 0.25;
+	stroke: var(--accent);
+	stroke-width: 0.5;
+}
+.ayah-number-text {
+	font: 700 11px var(--font-arabic);
+	fill: var(--accent);
+	dominant-baseline: middle;
+	/* dominant-baseline + text-anchor=middle keeps the digits
+	 * centred at any font size. */
 }
 
 .ayah-focus {
-  background: linear-gradient(transparent 70%, var(--word-hover-bg) 70%);
-  border-radius: var(--radius-md);
+	background: linear-gradient(transparent 70%, var(--word-hover-bg) 70%);
+	border-radius: var(--radius-md);
 }
 
 /* Word buttons */
 .ayah-text .word {
-  display: inline-block;
-  padding: 0 var(--sp-1);
-  margin: 0;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: background var(--dur-fast) var(--ease-out);
-  white-space: nowrap;
+	display: inline-block;
+	padding: 0 var(--sp-1);
+	margin: 0;
+	background: transparent;
+	border: 0;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	border-radius: var(--radius-sm);
+	transition: background var(--dur-fast) var(--ease-out);
+	white-space: nowrap;
 }
 .ayah-text .word:hover,
 .ayah-text .word:focus-visible {
-  background: var(--word-hover-bg);
-  outline: none;
+	background: var(--word-hover-bg);
+	outline: none;
 }
 .ayah-text .word[data-loading="true"] {
-  opacity: 0.7;
+	opacity: 0.7;
 }
 
 /* Marks (pause, sajdah, rub') */
 .ayah-text .mark {
-  padding: 0 var(--sp-1);
-  user-select: none;
-  font-weight: 600;
+	padding: 0 var(--sp-1);
+	user-select: none;
+	font-weight: 600;
 }
 /* Trailing marks (iqlab ۢ/ۭ, etc.) sit flush against the preceding
  * word — no horizontal padding, so they attach visually to the
  * final letter. Otherwise RTL whitespace plus the .mark padding
  * adds ~8px of visible gap that breaks the iqlab glyph. */
-.ayah-text .mark-trail { padding: 0; }
-.ayah-text .mark[data-char="۞"] { color: var(--mark-quran-rub); }
-.ayah-text .mark[data-char="۩"] { color: var(--mark-sajdah); }
-.ayah-text .mark[data-char="ۖ"], .ayah-text .mark[data-char="ۗ"],
-.ayah-text .mark[data-char="ۘ"], .ayah-text .mark[data-char="ۙ"],
-.ayah-text .mark[data-char="ۚ"], .ayah-text .mark[data-char="ۛ"],
-.ayah-text .mark[data-char="ۜ"] { color: var(--mark-pause); }
+.ayah-text .mark-trail {
+	padding: 0;
+}
+.ayah-text .mark[data-char="۞"] {
+	color: var(--mark-quran-rub);
+}
+.ayah-text .mark[data-char="۩"] {
+	color: var(--mark-sajdah);
+}
+.ayah-text .mark[data-char="ۖ"],
+.ayah-text .mark[data-char="ۗ"],
+.ayah-text .mark[data-char="ۘ"],
+.ayah-text .mark[data-char="ۙ"],
+.ayah-text .mark[data-char="ۚ"],
+.ayah-text .mark[data-char="ۛ"],
+.ayah-text .mark[data-char="ۜ"] {
+	color: var(--mark-pause);
+}
+
+/* ── Search result navigation footer ──────────────────────── */
+.surah-search-footer {
+	position: fixed;
+	bottom: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: var(--sp-3);
+	align-items: center;
+	padding: var(--sp-2) var(--sp-4);
+	background: var(--bg);
+	border: var(--border-w) solid var(--rule);
+	border-bottom: 0;
+	border-radius: var(--radius-md) var(--radius-md) 0 0;
+	z-index: var(--z-sticky);
+	font-size: var(--fs-sm);
+}
+.surah-search-footer button {
+	background: none;
+	border: var(--border-w) solid var(--rule);
+	border-radius: var(--radius-sm);
+	padding: var(--sp-1) var(--sp-3);
+	cursor: pointer;
+	color: var(--ink);
+	font-size: var(--fs-sm);
+}
+.surah-search-footer button:hover {
+	background: var(--bg-elev);
+}
+.ssf-info {
+	font-weight: 600;
+	color: var(--ink);
+	min-width: 3em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+/* Ayah-level translation (English, LTR) */
+.ayah-translation {
+	margin: var(--sp-2) 0 0;
+	padding: 0 var(--sp-2);
+	color: var(--ink-muted);
+	font: var(--fs-sm)/1.6 var(--font-latin);
+	text-align: left;
+}
+
+/* ── Surah page layout ─────────────────────────────────────── */
+/* Desktop proportional columns:
+ *   col 1 (2fr)  = horizontal spacing (~2%)
+ *   col 2 (30fr) = left sidebar (~30%, position: fixed)
+ *   col 3 (68fr) = surah main reader (~68%)
+ * On mobile, both columns stack vertically; the sidebar is hidden
+ * until a word is clicked. */
+.page-surah {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: var(--sp-4);
+}
+/* Side panel: mobile first — positioned as a fixed overlay near the
+ * top of the viewport, toggled open by JS on word click. */
+.surah-side-panel {
+	display: none;
+	position: fixed;
+	inset: 8rem var(--sp-3) auto var(--sp-3);
+	max-height: calc(100vh - 1rem);
+	overflow-y: auto;
+	overflow-wrap: break-word;
+	background: var(--bg);
+	border: var(--border-w) solid var(--rule);
+	border-radius: var(--radius-md);
+	padding: var(--sp-3);
+	z-index: var(--z-sticky);
+	font-size: var(--fs-sm);
+	line-height: 1.4;
+}
+.surah-side-panel.is-open {
+	display: block;
+}
+.ssp-empty,
+.ssp-loading {
+	color: var(--ink-soft);
+	text-align: center;
+	margin: var(--sp-8) 0;
+}
+
+/* Word header */
+.ssp-word {
+	margin: 0 0 var(--sp-2);
+	padding-bottom: var(--sp-2);
+	border-bottom: var(--border-w) solid var(--rule);
+}
+.ssp-word-text {
+	font: 700 var(--fs-md)/1 var(--font-arabic);
+	color: var(--ink);
+}
+.ssp-word-ref {
+	display: block;
+	font: var(--fs-xs)/1 var(--font-mono);
+	color: var(--ink-soft);
+	margin-top: 2px;
+}
+.ssp-gloss {
+	color: var(--ink);
+	margin: var(--sp-1) 0;
+}
+.ssp-segs {
+	margin: var(--sp-1) 0;
+}
+.ssp-seg {
+	padding: 1px 0;
+	font-size: var(--fs-xs);
+}
+.ssp-seg-text {
+	font: 600 var(--fs-xs)/1 var(--font-arabic);
+	color: var(--ink);
+}
+.ssp-seg-tags {
+	color: var(--ink-muted);
+}
+.ssp-dl {
+	display: flex;
+	gap: var(--sp-1);
+	margin: 0;
+	font-size: var(--fs-xs);
+}
+.ssp-dl dt {
+	color: var(--ink-muted);
+}
+.ssp-dl dd {
+	margin: 0;
+	color: var(--ink);
+}
+
+/* 3-col sub-grid for root detail */
+.ssp-root-grid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: var(--sp-2);
+	margin-top: var(--sp-2);
+	padding-top: var(--sp-2);
+	border-top: var(--border-w) solid var(--rule);
+}
+.ssp-col-head {
+	font: 600 var(--fs-xs)/1 var(--font-latin);
+	color: var(--ink-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	margin: 0 0 var(--sp-1);
+	padding-bottom: 2px;
+	border-bottom: var(--border-w) solid var(--rule);
+}
+.ssp-freq-item {
+	display: flex;
+	gap: var(--sp-1);
+	align-items: baseline;
+	padding: 1px 0;
+	font-size: var(--fs-xs);
+}
+.ssp-freq-item.is-current {
+	background: var(--word-hover-bg);
+	border-radius: 2px;
+	padding: 1px var(--sp-1);
+}
+.ssp-freq-arabic {
+	font: 600 var(--fs-xs)/1 var(--font-arabic);
+	color: var(--ink);
+}
+.ssp-freq-count {
+	color: var(--ink-soft);
+}
+.ssp-freq-verses {
+	color: var(--ink-muted);
+	font-size: 0.7rem;
+}
+
+.ssp-conc-item {
+	padding: 1px 0;
+	font-size: var(--fs-xs);
+}
+.ssp-conc-link {
+	font-weight: 600;
+	color: var(--ink);
+	font-family: var(--font-mono);
+}
+.ssp-conc-verse {
+	color: var(--ink-muted);
+	font: 0.7rem/1.4 var(--font-arabic);
+	text-align: right;
+	margin: 1px 0 0;
+}
+
+.ssp-shade-item {
+	padding: 2px 0;
+	font-size: var(--fs-xs);
+}
+.ssp-shade-head {
+	font-weight: 600;
+	color: var(--ink);
+}
+.ssp-shade-body {
+	color: var(--ink-muted);
+	margin: 1px 0;
+}
+
+.ssp-link {
+	display: inline-block;
+	margin: var(--sp-2) 0 0;
+	font-weight: 600;
+	font-size: var(--fs-xs);
+	color: var(--ink);
+}
+
+/* Main content */
+.surah-main {
+	min-width: 0;
+}
+
+@media (min-width: 960px) {
+	/* Desktop surah layout — proportional columns:
+   *   col 1 (2fr)  = horizontal spacing (~2%)
+   *   col 2 (30fr) = left sidebar (~30%, position: fixed)
+   *   col 3 (68fr) = surah main reader (~68%)
+   * The sidebar is removed from flow (position: fixed) but still
+   * occupies col 2 in the grid template so the main naturally lands
+   * in col 3. The JS in app.js positions the fixed panel to align
+   * visually with col 2. */
+	.page-surah {
+		grid-template-columns: 2fr 30fr 68fr;
+		gap: var(--sp-4);
+	}
+	.surah-side-panel {
+		display: block;
+		position: fixed;
+		top: 8rem;
+		right: auto; /* mobile shorthand leaves right:var(--sp-3); reset it */
+		bottom: auto;
+		left: var(--ssp-left, 0);
+		width: var(--ssp-width, 22rem);
+		max-height: calc(100vh - 10rem);
+		overflow-y: auto;
+		overflow-wrap: break-word;
+		padding: var(--sp-2);
+		z-index: var(--z-sticky);
+	}
+	.surah-side-panel.is-open {
+		display: block;
+	}
+	.surah-main {
+		grid-column: 3;
+	}
+	.ssp-root-grid {
+		grid-template-columns: 1fr 1fr 1fr;
+	}
+}

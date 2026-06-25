@@ -43,28 +43,58 @@
 	padding: 0;
 	display: inline;
 }
-.ayah-number {
-	display: inline-flex;
-	justify-content: center;
-	align-items: center;
-	font: 600 calc(var(--fs-quran) * 0.55)/1 var(--font-arabic);
-	color: var(--accent);
-	width: calc(var(--fs-quran) * 1.3);
-	height: calc(var(--fs-quran) * 1.3);
-	border-radius: 50%;
-	margin-inline-start: var(--sp-2);
-	position: relative;
+
+/* ── Word cluster (word + trailing marks + ayah number) ──────
+ * Each word and its trailing marks form one non-breaking unit
+ * so they cannot be split across lines by justify-text. The last
+ * cluster in each ayah also contains the inline-SVG ayah-number
+ * so the verse mark always stays with the last word.
+ *
+ *   display: inline-block  — cluster is one "word" for the
+ *                             justify-text algorithm; space is
+ *                             distributed *between* clusters
+ *                             rather than inside them.
+ *   white-space: nowrap    — guarantees the cluster never breaks.
+ */
+.word-cluster {
+	display: inline-block;
+	white-space: nowrap;
 }
-/* Quran.com-style enclosure */
-.ayah-number::before {
-	content: "";
-	position: absolute;
-	inset: 0;
-	background: var(--accent);
-	border-radius: 50% !important;
-	border: var(--border-w) solid var(--accent);
-	opacity: 0.25;
-	transform: translateY(10%);
+.word-cluster--end {
+	/* Slight space between the last word's marks and the verse
+	 * number — same effect as the original margin-inline-start
+	 * on .ayah-number. */
+	margin-inline-start: var(--sp-1);
+}
+
+/* ── Ayah number (inline SVG) ────────────────────────────────
+ * Per plan.md: "an svg with text inside centered horizontally,
+ * vertically. the svg scales when the number of letters increase
+ * from 1 to 10 then 100. max can be 3 digits."
+ *
+ * The viewBox is fixed at 24×24; the rendered width/height are
+ * proportional to the Quran font size so the SVG scales naturally.
+ * The circle (ayah-number-bg) is the Quran.com-style enclosure
+ * background, the text (ayah-number-text) holds the number.
+ */
+.ayah-number {
+	display: inline-block;
+	vertical-align: middle;
+	margin: 0;
+	flex-shrink: 0;
+}
+.ayah-number-bg {
+	fill: var(--accent);
+	fill-opacity: 0.25;
+	stroke: var(--accent);
+	stroke-width: 0.5;
+}
+.ayah-number-text {
+	font: 700 11px var(--font-arabic);
+	fill: var(--accent);
+	dominant-baseline: middle;
+	/* dominant-baseline + text-anchor=middle keeps the digits
+	 * centred at any font size. */
 }
 
 .ayah-focus {

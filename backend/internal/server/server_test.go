@@ -602,6 +602,117 @@ func TestStructuralClasses_Surah(t *testing.T) {
 	}
 }
 
+// ── Verse-mark / word-cluster tests ─────────────────────────────
+//
+// The Quran verse mark (ayah number) used to wrap to its own line
+// when text justification pushed the last word onto the previous line.
+// The fix: wrap each word + its trailing marks in a
+// <span class="word-cluster"> (display:inline-block + nowrap), and
+// include the ayah number SVG inside the LAST word's cluster so the
+// mark is physically anchored to the last word.
+
+func TestWordClusterEveryWord(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/2", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// Every word button must be wrapped in a word-cluster span.
+	buttons := strings.Count(body, `data-component="word"`)
+	clusters := strings.Count(body, `class="word-cluster`)
+	if buttons != clusters {
+		t.Errorf("word buttons (%d) and word-cluster spans (%d) differ — every word should be wrapped", buttons, clusters)
+	}
+	if clusters == 0 {
+		t.Error("no word-cluster spans rendered")
+	}
+}
+
+func TestAyahNumberSVGInsideLastWord(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/2", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Each verse must have exactly one ayah-number SVG.
+	verses := strings.Count(body, `id="verse-`)
+	svgs := strings.Count(body, `<svg class="ayah-number"`)
+	if verses != svgs {
+		t.Errorf("verses (%d) and ayah-number SVGs (%d) differ", verses, svgs)
+	}
+
+	// The ayah-number SVG must be inside a word-cluster--end span
+	// (i.e., physically nested inside the last word's cluster).
+	// Count word-cluster--end spans: should match verse count.
+	endClusters := strings.Count(body, `word-cluster--end`)
+	if endClusters != verses {
+		t.Errorf("word-cluster--end (%d) and verse count (%d) differ — every verse should have one last-word cluster", endClusters, verses)
+	}
+
+	// Each verse's word-cluster--end span must contain both the word
+	// button AND the ayah-number SVG. We spot-check a handful.
+	for _, vid := range []string{"verse-1", "verse-100", "verse-286"} {
+		idx := strings.Index(body, `id="`+vid+`"`)
+		if idx < 0 {
+			t.Errorf("missing %s", vid)
+			continue
+		}
+		// Find the next </section> after the verse anchor.
+		end := strings.Index(body[idx:], "</section>")
+		if end < 0 {
+			t.Errorf("verse %s: no </section>", vid)
+			continue
+		}
+		verse := body[idx : idx+end]
+		if !strings.Contains(verse, "word-cluster--end") {
+			t.Errorf("verse %s: no word-cluster--end", vid)
+			continue
+		}
+		// The word-cluster--end span and the SVG must coexist in
+		// the same verse — the SVG must come after the word button
+		// inside the cluster span.
+		openIdx := strings.Index(verse, `class="word-cluster word-cluster--end"`)
+		if openIdx < 0 {
+			continue
+		}
+		// Find the matching </span> by counting opens.
+		depth := 1
+		pos := openIdx + len(`class="word-cluster word-cluster--end"`)
+		for pos < len(verse) {
+			next := strings.IndexAny(verse[pos:], "<>")
+			if next < 0 {
+				break
+			}
+			pos += next
+			if pos < len(verse) && verse[pos] == '<' {
+				if pos+5 < len(verse) && verse[pos:pos+5] == "<span" {
+					depth++
+				} else if pos+6 < len(verse) && verse[pos:pos+6] == "</span" {
+					depth--
+					if depth == 0 {
+						break
+					}
+				}
+			}
+			pos++
+		}
+		cluster := verse[openIdx:pos]
+		if !strings.Contains(cluster, "data-component=\"word\"") {
+			t.Errorf("verse %s: word-cluster--end has no word button", vid)
+		}
+		if !strings.Contains(cluster, "<svg class=\"ayah-number\"") {
+			t.Errorf("verse %s: word-cluster--end has no ayah-number SVG — the verse mark is not anchored to the last word", vid)
+		}
+	}
+}
+
 func TestStructuralClasses_Error(t *testing.T) {
 	srv := testServer(t)
 	w := httptest.NewRecorder()
