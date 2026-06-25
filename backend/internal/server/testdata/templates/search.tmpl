@@ -16,7 +16,7 @@
       <li class="search-result" data-kind="{{.Kind}}">
         <a class="search-link" href="{{.Link}}">{{.Title}}</a>
         {{if .VerseText}}<p class="search-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
-        {{if .Snippet}}<p class="search-snippet">{{.Snippet}}</p>{{end}}
+        {{if .Snippet}}<p class="search-snippet">{{.Snippet | safeHTML}}</p>{{end}}
         {{if .Root}}<small class="search-root">root: <a href="/root/detailed/{{.Root}}">{{.Root}}</a></small>{{end}}
       </li>
     {{end}}

@@ -118,6 +118,13 @@ func funcMap() template.FuncMap {
 		"splitn": func(s, sep string, n int) []string { return strings.SplitN(s, sep, n) },
 		"add":    func(a, b, c int) int { return a + b + c },
 		"year":   func() int { return time.Now().Year() },
+		// safeHTML marks a string as safe to embed as raw HTML in
+		// the template (skips html/template's auto-escaping). Use
+		// ONLY for strings constructed by trusted server code —
+		// never for user input.
+		"safeHTML": func(s string) template.HTML {
+			return template.HTML(s)
+		},
 	}
 }
 

@@ -3,6 +3,7 @@ package search
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -105,6 +106,212 @@ func TestSearchResultRanking(t *testing.T) {
 	if results[0].Score > results[1].Score {
 		t.Errorf("not sorted: %d then %d", results[0].Score, results[1].Score)
 	}
+}
+
+// TestEnglishSearchNoSubstringBug is the regression for the
+// "rest<mark>rain</mark>ed" rendering bug. The old substring-based
+// match returned "restrained", "training", "in", "sin", etc. when
+// the user searched for "rain". The new word-boundary matcher
+// returns ONLY entries where "rain" is at a token boundary (exact
+// word or prefix match), never inside a token like "restrain".
+func TestEnglishSearchNoSubstringBug(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	results := English("rain", masaq, q, 100, 0)
+	if len(results) == 0 {
+		t.Fatal("no results for 'rain'")
+	}
+	for _, r := range results {
+		// Every result title's first token (after hyphen-split) must
+		// either equal "rain" or start with "rain". We explicitly
+		// reject titles like "restrained" where rain sits at
+		// non-token-start.
+		toks := EnTokenize(r.Title)
+		if len(toks) == 0 {
+			t.Errorf("result %q has no tokens", r.Title)
+			continue
+		}
+		first := toks[0]
+		if first == "rain" || strings.HasPrefix(first, "rain") {
+			continue // valid: exact or prefix at token start
+		}
+		// The first token doesn't start with "rain" — so how did
+		// this match? It must be a fuzzy match (rain~brain via
+		// Levenshtein) or it slipped through the substring filter.
+		// Check if any token in the title is a fuzzy/prefix match.
+		matched := false
+		for _, t := range toks {
+			if strings.HasPrefix(t, "rain") || t == "rain" {
+				matched = true
+				break
+			}
+			// Fuzzy match: Levenshtein ≤ 1 (AUTO for len 4).
+			if Levenshtein("rain", t) <= 1 && len(t) >= 3 &&
+				"rain"[:2] == t[:2] {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			t.Errorf("result %q (surah %d:%d) has 'rain' as a non-token substring — word-boundary check failed",
+				r.Title, r.Surah, r.Ayah)
+		}
+	}
+}
+
+// TestEnglishSearchRestrained checks that "restrained" returns the
+// correct entries (the exact word plus word-boundary compounds), but
+// does NOT return arbitrary other words that contain "restrain".
+func TestEnglishSearchRestrained(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	results := English("restrained", masaq, q, 20, 0)
+	if len(results) == 0 {
+		t.Fatal("no results for 'restrained'")
+	}
+	// First result should be the exact match.
+	if results[0].Title != "restrained" {
+		t.Errorf("first result = %q want 'restrained'", results[0].Title)
+	}
+}
+
+// TestEnglishSearchExactFirst checks that when a word exists as an
+// exact gloss in MASAQ, it appears as the first result — even if
+// other word-boundary matches also exist.
+func TestEnglishSearchExactFirst(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	for _, query := range []string{"mercy", "prayer", "light", "guidance"} {
+		results := English(query, masaq, q, 5, 0)
+		if len(results) == 0 {
+			t.Errorf("%q: no results", query)
+			continue
+		}
+		if results[0].Title != query {
+			t.Errorf("%q: first result = %q want exact match", query, results[0].Title)
+		}
+	}
+}
+
+// TestEnglishSearchHighlightWrapsWholeWord is the regression for
+// "rest<mark>rain</mark>ed" — the <mark> tag must always be at a
+// token boundary (start of title, or after a hyphen/space/open-paren).
+// What must NEVER happen is a mark in the middle of a token
+// like "<mark>rest</mark>" or a fragment between two word boundaries
+// in the middle of one token.
+func TestEnglishSearchHighlightWrapsWholeWord(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	results := English("rain", masaq, q, 100, 0)
+	if len(results) == 0 {
+		t.Skip("no results — MASAQ data may be missing")
+	}
+	boundaries := map[byte]bool{
+		'-':  true, // hyphen (compound word separator in MASAQ glosses)
+		' ':  true, // space
+		'(':  true, // open paren (e.g., "(rain-from)-the-sky")
+		';':  true, // semicolon
+		',':  true, // comma
+		'\t': true, // tab (unlikely but defensive)
+	}
+	for _, r := range results {
+		markStart := strings.Index(r.Snippet, "<mark>")
+		if markStart < 0 {
+			continue
+		}
+		// Opening <mark> must be at start of snippet OR right after
+		// a token-boundary character. This is the key check — it
+		// rejects the old "rest<mark>rain" bug where the mark sat
+		// mid-token.
+		if markStart > 0 {
+			prev := r.Snippet[markStart-1]
+			if !boundaries[prev] {
+				t.Errorf("snippet %q: <mark> not at token boundary (prev char %q at offset %d)",
+					r.Snippet, string(prev), markStart-1)
+			}
+		}
+	}
+}
+
+// TestClassifyMatch is a direct test for the classifier — verifies
+// every match class boundary without going through MASAQ. It is
+// the authoritative pin for the user's "rain should not match in /
+// sin / said / restrained" complaint.
+func TestClassifyMatch(t *testing.T) {
+	cases := []struct {
+		query, text string
+		want        MatchClass
+		note        string
+	}{
+		// Class 0: exact full-text match.
+		{"rain", "rain", MatchExact, "exact gloss equals query"},
+		{"mercy", "mercy", MatchExact, "exact gloss equals query"},
+		// Class 1: exact word match (after hyphen split the gloss
+		// tokens are independent words).
+		{"rain", "heavy-rain", MatchExactWord, "rain is a token after hyphen-split"},
+		{"rain", "(from)-the-sky-(rain)", MatchExactWord, "rain is a token"},
+		{"prayer", "the-prayer", MatchExactWord, "prayer is a token"},
+		// Class 2: prefix match.
+		{"rain", "raining", MatchPrefix, "raining starts with rain"},
+		{"rain", "rained", MatchPrefix, "rained starts with rain"},
+		{"rain", "rainfall", MatchPrefix, "rainfall starts with rain"},
+		{"prayer", "prayerful", MatchPrefix, "prayerful starts with prayer"},
+		// No match: substring in middle of token.
+		{"rain", "restrained", MatchNone, "rain is in the middle of restrained"},
+		{"rain", "training", MatchNone, "rain is at the end of training"},
+		{"rain", "brain", MatchNone, "rain is in the middle of brain"},
+		{"rain", "drainage", MatchNone, "rainage starts with drain, not rain"},
+		// rained is a prefix match (not exact word since 'rained' ≠ 'rain').
+		{"rain", "and-we-rained", MatchPrefix, "rained is a token, prefix match at token start"},
+		// No match: short query (1 char = no prefix / fuzzy).
+		{"a", "abc", MatchNone, "query too short, prefix would match everything"},
+		// Class 4: fuzzy match with AUTO + prefix lock.
+		{"merci", "mercy", MatchFuzzy, "1 edit, length ≥ 3, first 2 chars match"},
+		{"pryer", "prayer", MatchFuzzy, "1 edit"},
+		// Prefix lock: query "rain" should NOT fuzzy-match "in",
+		// "sin", "said" even though Levenshtein = 2 (because the
+		// first 2 chars don't match: r-a vs i-n / s-i / s-a).
+		{"rain", "in", MatchNone, "prefix lock: 'ra' vs 'in'"},
+		{"rain", "sin", MatchNone, "prefix lock: 'ra' vs 'si'"},
+		{"rain", "said", MatchNone, "prefix lock: 'ra' vs 'sa'"},
+		// AUTO fuzziness: short query = tight threshold.
+		{"rain", "brain", MatchNone, "prefix lock: 'ra' vs 'br'"},
+		{"rain", "drain", MatchNone, "prefix lock: 'ra' vs 'dr'"},
+		// Longer query: more lenient fuzzy.
+		{"prayer", "prayers", MatchPrefix, "prayers starts with prayer"},
+		{"prayer", "pryers", MatchFuzzy, "1 edit, AUTO fuzziness = 2"},
+	}
+	for _, c := range cases {
+		got := ClassifyMatch(c.query, c.text).Class
+		if got != c.want {
+			t.Errorf("ClassifyMatch(%q, %q) = %v (%s) want %v  [note: %s]",
+				c.query, c.text, got, got, c.want, c.note)
+		}
+	}
+}
+
+// TestAutoFuzziness checks the threshold function directly.
+func TestAutoFuzziness(t *testing.T) {
+	cases := []struct {
+		queryLen int
+		want     int
+	}{
+		{1, 0}, {2, 0}, // 1-2 char: no fuzzy
+		{3, 1}, {4, 1}, {5, 1}, // 3-5 char: 1 edit
+		{6, 2}, {10, 2}, {20, 2}, // 6+: 2 edits
+	}
+	for _, c := range cases {
+		if got := autoFuzziness(c.queryLen); got != c.want {
+			t.Errorf("autoFuzziness(%d) = %d want %d", c.queryLen, got, c.want)
+		}
+	}
+}
+
+// containsToken returns true if needle appears as a whole token
+// inside haystack (case-insensitive). Used by the highlight test.
+func containsToken(haystack, needle string) bool {
+	for _, t := range EnTokenize(haystack) {
+		if strings.EqualFold(t, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSearchSnippetHighlights(t *testing.T) {

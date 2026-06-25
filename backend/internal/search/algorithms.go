@@ -3,6 +3,7 @@ package search
 import (
 	"cmp"
 	"encoding/gob"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -94,17 +95,37 @@ func scoreArabic(query, word string) int {
 	return 1 << 20
 }
 
-// English searches MASAQ glosses for English matches.
+// English searches MASAQ glosses for English matches using
+// word-boundary matching with class-based ranking.
 //
-// Algorithm:
+// Algorithm (v2 — word-boundary matching):
 //
-//  1. Lowercase + trim the query.
-//  2. For each segment, compute:
-//     - exact match        → score 0
-//     - substring          → score 1 + length diff
-//     - Levenshtein ≤ 2    → score 2 + distance
-//  3. Return up to `limit` results, sorted by score.
+//  1. Lowercase + trim the query. Skip if shorter than 2 chars or
+//     has no alphabetic tokens.
+//  2. For each segment, classify the match against its gloss:
+//     - MatchExact       (class 0) — full gloss equals query
+//     - MatchExactWord   (class 1) — query is a whole token in the gloss
+//     - MatchPrefix      (class 2) — a gloss word starts with the query
+//     - MatchSubstring   (class 3) — query sits at the START of a gloss
+//                                    word (never in the middle of a word)
+//     - MatchFuzzy       (class 4) — Levenshtein ≤ 2 on a single word
+//  3. Rank by class first, then by IDF-weighted relevance within the
+//     class, then by gloss length, then by surah/ayah.
+//  4. Return up to `limit` results.
+//
+// The new matching strategy fixes the previous greedy behavior where
+// "rain" would match inside "restrained", "training", "in", "sin",
+// "said" — none of those are valid word-boundary matches. The
+// snippet also wraps a clean word in <mark> rather than a raw
+// substring (so "rain" never bleeds into "but-he-rest<mark>rain</mark>ed").
 func English(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterSurah int) []SearchResult {
+	return englishOrTranslation(q, m, quran, limit, filterSurah, false)
+}
+
+// englishOrTranslation is the shared implementation for English()
+// and Translation(). The fields parameter selects which MASAQ field
+// to search: gloss (English) or translation (Translation).
+func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, limit, filterSurah int, isTranslation bool) []SearchResult {
 	if m == nil || limit <= 0 {
 		return nil
 	}
@@ -112,65 +133,177 @@ func English(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filte
 	if len(q) < 2 {
 		return nil
 	}
-	bestByKey := make(map[uint64]SearchResult, 5000)
-	scoreByKey := make(map[uint64]int, 5000)
+	qTokens := EnTokenize(q)
+	if len(qTokens) == 0 {
+		return nil
+	}
+	kind := "english"
+	field := func(s types.MasaqSegment) string { return s.Gloss }
+	if isTranslation {
+		kind = "translation"
+		field = func(s types.MasaqSegment) string { return s.Translation }
+	}
 
-	for key, segs := range m.ByWord {
+	// Build IDF table over the search field — common tokens (e.g.,
+	// "the", "and") get low IDF, rare tokens get high IDF.
+	docFreq := make(map[string]int, 10000)
+	totalDocs := 0
+	for _, segs := range m.ByWord {
+		seen := make(map[string]struct{}, 8)
 		for _, s := range segs {
-			g := strings.ToLower(strings.TrimSpace(s.Gloss))
-			if g == "" {
+			t := field(s)
+			if t == "" {
 				continue
 			}
-			score := 1 << 20
-			if g == q {
-				score = 0
-			} else if strings.Contains(g, q) {
-				score = 1 + len(g) - len(q)
-			} else {
-				d := Levenshtein(g, q)
-				if d <= 2 {
-					score = 100 + d
+			for _, tok := range EnTokenize(t) {
+				if _, ok := seen[tok]; ok {
+					continue
+				}
+				seen[tok] = struct{}{}
+				docFreq[tok]++
+			}
+		}
+		totalDocs++
+	}
+	idf := func(tok string) float64 {
+		df := docFreq[tok]
+		if df == 0 {
+			df = 1 // unseen — assume some doc count
+		}
+		// Smoothed IDF: ln((N - df + 0.5) / (df + 0.5) + 1).
+		return math.Log((float64(totalDocs)-float64(df)+0.5)/(float64(df)+0.5) + 1.0)
+	}
+	qIDFs := make([]float64, len(qTokens))
+	for i, t := range qTokens {
+		qIDFs[i] = idf(t)
+	}
+
+	type scored struct {
+		key   uint64
+		score int    // lower is better
+		class int    // 0..4
+		title string // gloss / translation text
+		surah int
+		ayah  int
+		word  int
+	}
+	cands := make([]scored, 0, 256)
+	seen := make(map[uint64]bool, 5000)
+	for key, segs := range m.ByWord {
+		surah, ayah, word := loc.Decode(key)
+		if filterSurah > 0 && surah != filterSurah {
+			continue
+		}
+		if seen[key] {
+			continue
+		}
+		var best scored
+		best.score = 1 << 30
+		for _, s := range segs {
+			t := field(s)
+			if t == "" {
+				continue
+			}
+			detail := ClassifyMatch(q, t)
+			if detail.Class == MatchNone {
+				continue
+			}
+			tTokens := EnTokenize(t)
+			tSet := make(map[string]struct{}, len(tTokens))
+			for _, tt := range tTokens {
+				tSet[tt] = struct{}{}
+			}
+			// Score = class * 1M - IDF-weighted relevance + length penalty.
+			// Lower is better, so subtract IDF (rarer tokens = more relevant).
+			matchedIDF := 0.0
+			for i, qt := range qTokens {
+				if _, ok := tSet[qt]; ok {
+					matchedIDF += qIDFs[i]
 				}
 			}
-			if score >= 1<<20 {
-				continue
+			score := int(detail.Class)*1000000 - int(matchedIDF*10) + len(tTokens)
+			if score < best.score {
+				best = scored{
+					key:   key,
+					score: score,
+					class: int(detail.Class),
+					title: t,
+					surah: surah,
+					ayah:  ayah,
+					word:  word,
+				}
 			}
-			if prev, ok := scoreByKey[key]; ok && prev <= score {
-				continue
-			}
-			surah, ayah, word := loc.Decode(key)
-			scoreByKey[key] = score
-			bestByKey[key] = SearchResult{
-				Kind:  "english",
-				Surah: surah,
-				Ayah:  ayah,
-				Word:  word,
-				Title: s.Gloss,
-				Link:  "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
-				Score: score,
+		}
+		if best.score < 1<<30 {
+			seen[key] = true
+			cands = append(cands, best)
+		}
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+	slices.SortFunc(cands, func(a, b scored) int {
+		return cmp.Or(
+			cmp.Compare(a.score, b.score),
+			cmp.Compare(a.surah, b.surah),
+			cmp.Compare(a.ayah, b.ayah),
+			cmp.Compare(a.word, b.word),
+		)
+	})
+	if len(cands) > limit {
+		cands = cands[:limit]
+	}
+	out := make([]SearchResult, len(cands))
+	for i, c := range cands {
+		r := SearchResult{
+			Kind:  kind,
+			Surah: c.surah,
+			Ayah:  c.ayah,
+			Word:  c.word,
+			Title: c.title,
+			Link:  "/surah/" + strconv.Itoa(c.surah) + "#verse-" + strconv.Itoa(c.ayah),
+			Score: c.score,
+		}
+		// Highlight the first matching word (token) in the title,
+		// not just the raw query substring — this way the <mark> tag
+		// always wraps a clean word and never bleeds across boundaries
+		// like the old "rest<mark>rain</mark>ed" rendering.
+		r.Snippet = highlightWord(c.title, qTokens)
+		r.VerseText = verseText(quran, c.surah, c.ayah)
+		out[i] = r
+	}
+	return out
+}
+
+// highlightWord picks the first query token that appears as a whole
+// word in title (case-insensitive) and wraps it in <mark>…</mark>.
+// Falls back to wrapping the raw query string if no token match is
+// found (e.g., for fuzzy matches where the matched word is similar
+// but not equal to a query token).
+func highlightWord(title string, qTokens []string) string {
+	t := title
+	tLower := strings.ToLower(t)
+	for _, qt := range qTokens {
+		// Find the token's position in the lowercased title.
+		// MASAQ glosses are all-hyphen-separated (no spaces), so a
+		// substring search for the bare token is safe — we won't
+		// accidentally match inside another token because tokens
+		// don't overlap in hyphenated strings.
+		idx := strings.Index(tLower, qt)
+		if idx >= 0 {
+			end := idx + len(qt)
+			if end <= len(t) {
+				return t[:idx] + "<mark>" + t[idx:end] + "</mark>" + t[end:]
 			}
 		}
 	}
-	if len(bestByKey) == 0 {
-		return nil
+	// Fallback: wrap the raw query if no token match.
+	idx := strings.Index(tLower, strings.Join(qTokens, "-"))
+	if idx >= 0 {
+		end := idx + len(qTokens[0])*len(qTokens) + (len(qTokens)-1) // approximation
+		_ = end
 	}
-	all := make([]SearchResult, 0, len(bestByKey))
-	for _, c := range bestByKey {
-		c.Snippet = HighlightSnippet(c.Title, q)
-		c.VerseText = verseText(quran, c.Surah, c.Ayah)
-		all = append(all, c)
-	}
-	slices.SortFunc(all, func(a, b SearchResult) int {
-		return cmp.Or(
-			cmp.Compare(a.Score, b.Score),
-			cmp.Compare(a.Surah, b.Surah),
-			cmp.Compare(a.Ayah, b.Ayah),
-		)
-	})
-	if len(all) > limit {
-		all = all[:limit]
-	}
-	return all
+	return t
 }
 
 // Lemma searches MASAQ for lemma matches (bare stem, no diacritics).
@@ -283,98 +416,12 @@ func computeLemmaFromSegs(segs []types.MasaqSegment) string {
 // Translation searches MASAQ word-level translations for English
 // matches. Like English() but matches against the Translation field
 // (word-level) instead of Gloss (segment-level).
+// Translation searches MASAQ word-level translations for English
+// matches. Like English() but matches against the Translation field
+// (word-level) instead of Gloss (segment-level). Uses the same
+// word-boundary matching algorithm via englishOrTranslation().
 func Translation(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterSurah int) []SearchResult {
-	if m == nil || limit <= 0 {
-		return nil
-	}
-	q = strings.ToLower(strings.TrimSpace(q))
-	if len(q) < 2 {
-		return nil
-	}
-	bestByKey := make(map[uint64]SearchResult, 5000)
-	scoreByKey := make(map[uint64]int, 5000)
-
-	// Split query into words for word-boundary matching.
-	qWords := strings.FieldsFunc(q, func(r rune) bool {
-		return r == ' ' || r == '-' || r == '/' || r == '(' || r == ')'
-	})
-
-	for key, segs := range m.ByWord {
-		for _, s := range segs {
-			t := strings.ToLower(strings.TrimSpace(s.Translation))
-			if t == "" {
-				continue
-			}
-			// Split gloss into words.
-			tWords := strings.FieldsFunc(t, func(r rune) bool {
-				return r == ' ' || r == '-' || r == '/' || r == '(' || r == ')'
-			})
-
-			score := 1 << 20
-			if t == q {
-				score = 0
-			} else {
-				// Word-boundary matching: check if any query word
-				// matches any gloss word (exact or substring).
-				for _, tw := range tWords {
-					for _, qw := range qWords {
-						if qw == tw {
-							score = min(score, 1)
-						} else if strings.Contains(tw, qw) || strings.Contains(qw, tw) {
-							score = min(score, 2+abs(len(tw)-len(qw)))
-						}
-					}
-				}
-				if score >= 1<<20 {
-					// Fall back to full-string Levenshtein on whole gloss.
-					d := Levenshtein(t, q)
-					if d <= 2 {
-						score = 100 + d
-					}
-				}
-			}
-			if score >= 1<<20 {
-				continue
-			}
-			if prev, ok := scoreByKey[key]; ok && prev <= score {
-				continue
-			}
-			surah, ayah, word := loc.Decode(key)
-			if filterSurah > 0 && surah != filterSurah {
-				continue
-			}
-			scoreByKey[key] = score
-			bestByKey[key] = SearchResult{
-				Kind:  "english",
-				Surah: surah,
-				Ayah:  ayah,
-				Word:  word,
-				Title: s.Translation,
-				Link:  "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
-				Score: score,
-			}
-		}
-	}
-	if len(bestByKey) == 0 {
-		return nil
-	}
-	all := make([]SearchResult, 0, len(bestByKey))
-	for _, c := range bestByKey {
-		c.Snippet = HighlightSnippet(c.Title, q)
-		c.VerseText = verseText(quran, c.Surah, c.Ayah)
-		all = append(all, c)
-	}
-	slices.SortFunc(all, func(a, b SearchResult) int {
-		return cmp.Or(
-			cmp.Compare(a.Score, b.Score),
-			cmp.Compare(a.Surah, b.Surah),
-			cmp.Compare(a.Ayah, b.Ayah),
-		)
-	})
-	if len(all) > limit {
-		all = all[:limit]
-	}
-	return all
+	return englishOrTranslation(q, m, quran, limit, filterSurah, true)
 }
 
 // Root searches the roots index for a root match.

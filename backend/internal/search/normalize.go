@@ -1,6 +1,9 @@
 package search
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 // NormalizeArabic canonicalizes an Arabic string for fuzzy matching:
 //
@@ -225,4 +228,221 @@ func HighlightSnippet(text, match string) string {
 		return text
 	}
 	return text[:i] + "<mark>" + match + "</mark>" + text[i+len(match):]
+}
+
+// ── English / Translation word-tokenization ──────────────────
+//
+// MASAQ glosses look like "the-prayer", "and-restrained",
+// "(from)-the-sky-(rain)". Hyphens mark morpheme boundaries within
+// a compound word (NOT word boundaries — the whole compound is one
+// token in the underlying linguistic unit). Apostrophes mark
+// clitics. We tokenize on hyphen AND on whitespace, treating each
+// hyphen-separated chunk as its own word.
+//
+// Examples:
+//   "heavy-rain"        → ["heavy", "rain"]         (2 words)
+//   "(rain-from)-sky"    → ["rain", "from", "sky"]   (3 words)
+//   "and-the-prayer;"    → ["and", "the", "prayer"]  (3 words)
+//
+// This is the right granularity for word-boundary matching:
+// queries like "rain" should match "(rain-from)-sky" as exact-word
+// (because "rain" is a token after hyphen-split), but should NOT
+// match "(from)-the-sky-(rain)" if the hyphen split doesn't put
+// "rain" at a token boundary — i.e., we'd never see "rain" embedded
+// in the middle of "from-the-sky-rain" without it being its own
+// token.
+var enTokenRe = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?`)
+
+// EnTokenize returns the lowercased token list of an English/Translation
+// gloss. Used by the English() and Translation() search functions to
+// do word-boundary matching.
+func EnTokenize(s string) []string {
+	return enTokenRe.FindAllString(strings.ToLower(s), -1)
+}
+
+// MatchClass is a tiered classification of how a query matches a
+// candidate gloss. Lower numbers are better matches and sort first.
+//
+//   0 — exact full-text match (the whole gloss equals the query, or
+//        the query is a single token and the gloss is that single
+//        token)
+//   1 — exact word-boundary match (every query token is a full
+//        word in the gloss, after tokenization on hyphens)
+//   2 — prefix match (a gloss word starts with the query and the
+//        query is shorter than that word — e.g., "rain" → "raining")
+//   3 — substring inside a token (e.g., "rain" → "rainfall") — only
+//        when the substring is at the START of a token, never in
+//        the middle (so "rain" doesn't match "restrain").
+//   4 — fuzzy match (Levenshtein ≤ 2 on a single-word query vs a
+//        single gloss word)
+//   9 — no useful match
+type MatchClass int
+
+const (
+	MatchExact        MatchClass = 0
+	MatchExactWord    MatchClass = 1
+	MatchPrefix       MatchClass = 2
+	MatchSubstring    MatchClass = 3
+	MatchFuzzy        MatchClass = 4
+	MatchNone         MatchClass = 9
+)
+
+// String renders a MatchClass as a stable string label (used in
+// logs and tests).
+func (m MatchClass) String() string {
+	switch m {
+	case MatchExact:
+		return "exact"
+	case MatchExactWord:
+		return "exact_word"
+	case MatchPrefix:
+		return "prefix"
+	case MatchSubstring:
+		return "substr_start"
+	case MatchFuzzy:
+		return "fuzzy"
+	default:
+		return "none"
+	}
+}
+
+// MatchDetail records how a query matched a candidate text.
+type MatchDetail struct {
+	Class   MatchClass
+	Kind    string // same as Class.String()
+	Matched string // the gloss word that matched (for debugging)
+	Dist    int    // Levenshtein distance (for fuzzy matches)
+}
+
+// ClassifyMatch inspects how `query` matches `text` (both already
+// lowercased by the caller) and returns the best match class +
+// details. The matching strategy is word-boundary: we tokenize the
+// text on hyphens + whitespace, then look for the query as a whole
+// token, a prefix, or a fuzzy match within a token.
+//
+// Critical: the function NEVER matches a query as a substring that
+// crosses a word boundary in the candidate text. For example,
+// "rain" must not match "restrained" (rain is embedded inside
+// "restrained" at non-token-start position), nor must it match
+// "training" (rain at end), nor "in", "sin", "said" (Levenshtein
+// ≤ 2 but the result is misleading for short queries — we use
+// AUTO fuzziness plus a 2-char prefix lock so "rain" → "in" is
+// rejected).
+//
+// AUTO fuzziness (Lucene convention): 0 for query length 0..2, 1
+// for length 3..5, 2 for length ≥ 6. This keeps the threshold tight
+// for short queries where a 2-edit distance can collapse unrelated
+// words ("rain" → "in" is a tempting 2-edit match but unrelated).
+func ClassifyMatch(query, text string) MatchDetail {
+	q := strings.ToLower(strings.TrimSpace(query))
+	t := strings.ToLower(strings.TrimSpace(text))
+	if q == "" || t == "" {
+		return MatchDetail{Class: MatchNone}
+	}
+	if q == t {
+		return MatchDetail{Class: MatchExact, Kind: "exact", Matched: q}
+	}
+	qTokens := EnTokenize(q)
+	tTokens := EnTokenize(t)
+	if len(qTokens) == 0 {
+		return MatchDetail{Class: MatchNone}
+	}
+	if len(qTokens) == 1 {
+		qt := qTokens[0]
+		// Minimum query length: a 1-char query is too short for any
+		// meaningful prefix or fuzzy match (every gloss word would
+		// be a prefix of "a" or "i", etc.). The caller already
+		// filters len(q) < 2, but defence-in-depth: skip prefix
+		// matches for very short queries too.
+		if len(qt) < 2 {
+			return MatchDetail{Class: MatchNone}
+		}
+		// Class 1: exact word match (after hyphen-split the gloss
+		// tokens are independent words).
+		for _, tt := range tTokens {
+			if qt == tt {
+				return MatchDetail{Class: MatchExactWord, Kind: "exact_word", Matched: qt}
+			}
+		}
+		// Class 2: prefix match (text token starts with the query).
+		// Catches "rain" → "raining", "rain" → "rained",
+		// "rain" → "rainfall", "rain" → "raintime", etc.
+		for _, tt := range tTokens {
+			if len(tt) > len(qt) && strings.HasPrefix(tt, qt) {
+				return MatchDetail{Class: MatchPrefix, Kind: "prefix", Matched: tt}
+			}
+		}
+		// Class 4: fuzzy match with AUTO fuzziness + 2-char prefix
+		// lock. The prefix lock rejects "rain" → "in" / "sin" /
+		// "said" (all 2 edits away but start with completely
+		// different letters); AUTO fuzziness handles the rare
+		// cross-typo case like "prayer" → "pryers" (1 edit).
+		af := autoFuzziness(len(qt))
+		var bestDist int = 99
+		var bestMatch string
+		for _, tt := range tTokens {
+			// Prefix lock: query length ≥ 3 AND gloss word length ≥ 3
+			// AND first 2 chars must match. This keeps short fuzzy
+			// matches from collapsing unrelated words. For len < 3
+			// queries the prefix lock doesn't apply (we have very
+			// few 1-2 char queries anyway since len(q) < 2 is
+			// filtered out at the caller).
+			if len(qt) >= 3 && len(tt) >= 3 && qt[:2] != tt[:2] {
+				continue
+			}
+			d := Levenshtein(qt, tt)
+			if d <= af && d < bestDist {
+				bestDist = d
+				bestMatch = tt
+			}
+		}
+		if bestDist <= af {
+			return MatchDetail{Class: MatchFuzzy, Kind: "fuzzy", Matched: bestMatch, Dist: bestDist}
+		}
+		return MatchDetail{Class: MatchNone}
+	}
+	// Multi-token query — require all tokens to be present in the
+	// gloss as whole words (class 1).
+	qset := make(map[string]struct{}, len(qTokens))
+	for _, t := range qTokens {
+		qset[t] = struct{}{}
+	}
+	tset := make(map[string]struct{}, len(tTokens))
+	for _, t := range tTokens {
+		tset[t] = struct{}{}
+	}
+	for qt := range qset {
+		if _, ok := tset[qt]; !ok {
+			return MatchDetail{Class: MatchNone}
+		}
+	}
+	return MatchDetail{Class: MatchExactWord, Kind: "exact_words", Matched: joinTokens(qTokens)}
+}
+
+// autoFuzziness returns the Lucene "AUTO" fuzziness threshold for a
+// query token of the given length. Short queries get tight
+// thresholds (so "rain" → "in" doesn't match — that would be
+// misleading), longer queries can absorb more edits.
+func autoFuzziness(queryLen int) int {
+	switch {
+	case queryLen <= 2:
+		return 0
+	case queryLen <= 5:
+		return 1
+	default:
+		return 2
+	}
+}
+
+// joinTokens renders a token slice as a single string for logging /
+// debug display.
+func joinTokens(toks []string) string {
+	out := ""
+	for i, t := range toks {
+		if i > 0 {
+			out += " "
+		}
+		out += t
+	}
+	return out
 }
