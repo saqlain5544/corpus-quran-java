@@ -1,10 +1,10 @@
 {{define "roots-list.tmpl"}}{{template "layout" .}}{{end}}
 {{define "content"}}
-<div class="page-roots">
-  <header class="roots-header">
+<div class="page-roots measure-wide">
+  <header class="layout-header">
     <h1>Roots</h1>
-    <div class="roots-controls">
-      <form method="get" action="/roots">
+    <div class="layout-header-actions surface surface--bare">
+      <form class="cluster" method="get" action="/roots">
         <label>Surah:
           <select name="surah" onchange="this.form.submit()">
             <option value="">All</option>
@@ -23,7 +23,7 @@
     </div>
   </header>
 
-  <ol class="roots-list">
+  <ol class="roots-list surface surface--bare">
     {{range .Results}}
       <li class="root-row">
         <a class="root-link" href="{{.Link}}">
@@ -35,7 +35,7 @@
     {{end}}
   </ol>
 
-  <nav class="pagination" aria-label="Pagination">
+  <nav class="pagination surface surface--bare" aria-label="Pagination">
     {{if .HasPrev}}<a class="page-prev" href="/roots?page={{dec .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">← Prev</a>{{end}}
     <span class="page-info">Page {{.Page}}</span>
     {{if .HasNext}}<a class="page-next" href="/roots?page={{inc .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">Next →</a>{{end}}

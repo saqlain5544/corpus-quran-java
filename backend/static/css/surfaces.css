@@ -1,0 +1,165 @@
+/* surfaces.css — structural design vocabulary.
+ *
+ * These classes are page-agnostic. They give every page a consistent
+ * feel for surfaces, stacking, clustering, and measure widths without
+ * coupling to any one feature.
+ *
+ *   .surface            A card-like block: bg, border, padding, radius.
+ *                        Variants --sunken / --elev / --bare.
+ *   .stack              Vertical stack of children with consistent gap.
+ *   .cluster            Horizontal cluster that wraps.
+ *   .flow               Block flow — children get vertical rhythm.
+ *   .measure-*          Constrains content width for readability.
+ *   .layout-shell       Page-level grid wrapper (slots in .page grid).
+ *   .layout-header      Page header band (title + subtitle + actions).
+ *   .layout-aside       Sidebar / secondary column.
+ *   .layout-footer      Page footer band.
+ *   .grid-N             Generic 12-col grid spans.
+ */
+
+/* ── Surfaces ──────────────────────────────────────────────────── */
+
+.surface {
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--sp-4) var(--sp-6);
+}
+/* Sunken — visually recedes; used for inset panels (lemmas, dist). */
+.surface--sunken {
+  background: var(--bg-sunken);
+  border-color: transparent;
+}
+/* Elevated — top of the stack; used for the root-detail header card. */
+.surface--elev {
+  background: var(--bg-elev);
+  border-color: var(--rule);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02), 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+/* Bare — no background or border, just the padding/radius for spacing. */
+.surface--bare {
+  background: transparent;
+  border: 0;
+  padding: var(--sp-3) 0;
+}
+
+/* ── Stack & cluster ────────────────────────────────────────────── */
+
+.stack > * + * { margin-top: var(--stack-gap, var(--sp-4)); }
+.stack--tight > * + * { margin-top: var(--sp-2); }
+.stack--loose > * + * { margin-top: var(--sp-6); }
+
+.cluster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cluster-gap, var(--sp-3));
+  align-items: var(--cluster-align, baseline);
+}
+.cluster--center { align-items: center; }
+.cluster--end    { justify-content: flex-end; }
+
+/* Block flow: vertical rhythm for sequential content. Use when a
+ * container is a list of mixed elements (heading, paragraph, table)
+ * and you want a consistent rhythm without manual margins. */
+.flow > * + * { margin-top: var(--sp-4); }
+.flow > h2 + * { margin-top: var(--sp-2); }
+
+/* ── Content measure widths ────────────────────────────────────── */
+
+.measure-narrow { max-width: var(--measure-narrow); margin-inline: auto; }
+.measure-base   { max-width: var(--measure-base);   margin-inline: auto; }
+.measure-wide   { max-width: var(--measure-wide);   margin-inline: auto; }
+.measure-quran  { max-width: var(--measure-quran);  margin-inline: auto; }
+
+/* ── Layout shells ────────────────────────────────────────────── */
+
+/* layout-shell is the per-page grid wrapper. By default it's a 12-col
+ * grid identical to .page (which already exists for that purpose).
+ * Use it as <div class="layout-shell layout-shell--two-col"> to get
+ * a 2-col layout with consistent gutters. */
+.layout-shell {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: var(--grid-gap);
+  width: 100%;
+}
+.layout-shell--two-col {
+  /* Default 8 / 4 split. Override with .layout-aside--wide etc. */
+  grid-template-columns: minmax(0, 8fr) minmax(0, 4fr);
+}
+.layout-shell--three-col {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 6fr) minmax(0, 3fr);
+}
+
+.layout-header {
+  /* Page-level header band: title + subtitle + actions. Stacks
+   * title above a meta line, with actions floated to the end. */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-2) var(--sp-4);
+  align-items: end;
+  margin-bottom: var(--sp-6);
+  padding-bottom: var(--sp-4);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.layout-header h1 {
+  margin: 0;
+  font: 600 var(--fs-2xl)/1.2 var(--font-latin);
+  color: var(--ink);
+  grid-column: 1;
+}
+.layout-header .layout-header-meta {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--fs-sm);
+  grid-column: 1;
+}
+.layout-header .layout-header-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.layout-aside {
+  /* Right column for sidebars / distributions. */
+  min-width: 0;
+}
+.layout-aside--sticky {
+  position: sticky;
+  top: calc(56px + var(--sp-4));
+  align-self: start;
+  max-height: calc(100vh - 56px - var(--sp-8));
+  overflow-y: auto;
+}
+
+.layout-footer {
+  margin-top: var(--sp-12);
+  padding-top: var(--sp-6);
+  border-top: var(--border-w) solid var(--rule);
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+}
+
+/* ── Page wrappers ─────────────────────────────────────────────── */
+
+.page-home > * + *,
+.page-roots > * + *,
+.page-search > * + *,
+.page-root-detail > * + *,
+.page-concordance > * + *,
+.page-about > * + *,
+.error-page > * + * {
+  margin-top: var(--sp-4);
+}
+
+/* ── Responsive — collapse shells on narrow viewports ──────────── */
+@media (max-width: 900px) {
+  .layout-shell--two-col,
+  .layout-shell--three-col {
+    grid-template-columns: 1fr;
+  }
+  .layout-aside--sticky {
+    position: static;
+    max-height: none;
+  }
+}

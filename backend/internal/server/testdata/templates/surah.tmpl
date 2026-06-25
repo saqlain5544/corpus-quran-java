@@ -3,14 +3,14 @@
 <div class="page-surah" data-surah="{{.Surah.Number}}">
   <!-- Column 1: Fixed root-detail side panel -->
   <aside class="surah-side-panel" id="surah-side-panel" data-component="surah-side-panel">
-    <div class="ssp-inner" id="ssp-content">
+    <div class="ssp-inner surface surface--elev" id="ssp-content">
       <p class="ssp-empty">Click a word to see root details.</p>
     </div>
   </aside>
 
-  <!-- Column 2: Main content (11 of 12 grid columns) -->
+  <!-- Main surah content (68% of the 2/30/68 grid on desktop) -->
   <div class="surah-main">
-  <header class="surah-header" data-sticky="below-global">
+  <header class="surah-header surface surface--bare" data-sticky="below-global">
     <div class="sh-row sh-nav-row">
       <div class="sh-nav-left">
         {{if .Prev}}<a class="sh-prev" href="/surah/{{.Prev.Number}}" rel="prev">← {{.Prev.Number}}</a>{{else}}<span class="sh-prev disabled">←</span>{{end}}
@@ -52,13 +52,13 @@
   </header>
 
   {{if .Surah.Bismillah}}
-  <p class="bismillah" lang="ar" dir="rtl">{{.Surah.Bismillah}}</p>
+  <p class="bismillah surface surface--bare" lang="ar" dir="rtl">{{.Surah.Bismillah}}</p>
   {{end}}
 
   <article class="quran" lang="ar" dir="rtl">
     {{range $i, $ae := .AyahEntries}}
       {{$an := $ae.Ayah.Number}}
-      <section class="ayah" id="verse-{{$an}}" data-ayah="{{$an}}">
+      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}">
         <p class="ayah-text" lang="ar" dir="rtl">
           {{- range $t := $ae.Ayah.Tokens -}}
             {{- if eq $t.Kind "word" -}}

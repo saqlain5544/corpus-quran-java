@@ -1,17 +1,17 @@
 {{define "search.tmpl"}}{{template "layout" .}}{{end}}
 {{define "content"}}
-<div class="page-search">
-  <header class="search-summary">
+<div class="page-search measure-wide">
+  <header class="layout-header">
     <h1>{{if .Query}}Results for &ldquo;{{.Query}}&rdquo;{{else}}Search{{end}}</h1>
     {{if .Query}}
-      <p class="search-meta">{{len .Results}} results in <span class="search-type">{{.Type}}</span></p>
+      <p class="layout-header-meta">{{len .Results}} results in <span class="search-type">{{.Type}}</span></p>
     {{else}}
-      <p class="search-meta">Use the box in the header to search by root, English gloss, or Arabic word.</p>
+      <p class="layout-header-meta">Use the box in the header to search by root, English gloss, or Arabic word.</p>
     {{end}}
   </header>
 
   {{if .Results}}
-  <ol class="search-results">
+  <ol class="search-results surface">
     {{range .Results}}
       <li class="search-result" data-kind="{{.Kind}}">
         <a class="search-link" href="{{.Link}}">{{.Title}}</a>
@@ -22,7 +22,7 @@
     {{end}}
   </ol>
   {{else if .Query}}
-  <p class="search-empty">No matches.</p>
+  <p class="search-empty surface">No matches.</p>
   {{end}}
 </div>
 {{end}}

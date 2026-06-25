@@ -1,14 +1,14 @@
 {{define "concordance.tmpl"}}{{template "layout" .}}{{end}}
 {{define "content"}}
-<div class="page-concordance">
-  <header class="concordance-header">
+<div class="page-concordance measure-wide">
+  <header class="layout-header">
     <h1>Concordance</h1>
-    <p class="concordance-subtitle">{{.Total}} roots with {{.Roots|len}} shown on this page.</p>
+    <p class="layout-header-meta">{{.Total}} roots with {{.Roots|len}} shown on this page.</p>
   </header>
 
-  <ol class="concordance-list">
+  <ol class="concordance-list stack">
     {{range .Roots}}
-      <li class="concordance-root">
+      <li class="concordance-root surface">
         <h2 class="cr-buckwalter">
           <a href="/root/detailed/{{.Buckwalter}}">{{.Buckwalter}}</a>
           <small>{{.Occurrences}} occurrences</small>
@@ -37,7 +37,7 @@
     {{end}}
   </ol>
 
-  <nav class="pagination" aria-label="Pagination">
+  <nav class="pagination surface surface--bare" aria-label="Pagination">
     {{if .HasPrev}}<a class="page-prev" href="/concordance?page={{dec .Page}}">← Prev</a>{{end}}
     <span class="page-info">Page {{.Page}}</span>
     {{if .HasNext}}<a class="page-next" href="/concordance?page={{inc .Page}}">Next →</a>{{end}}

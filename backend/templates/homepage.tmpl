@@ -1,11 +1,11 @@
 {{define "homepage.tmpl"}}{{template "layout" .}}{{end}}
 {{define "content"}}
 <div class="page-home">
-  <header class="page-header">
+  <header class="layout-header">
     <h1>Quran Reader</h1>
-    <p class="page-subtitle">Read, search, and explore the Quran with full morphology.</p>
+    <p class="layout-header-meta">Read, search, and explore the Quran with full morphology.</p>
   </header>
-  <section class="surah-list" aria-label="Surahs">
+  <section class="surface surface--bare" aria-label="Surahs">
     <ol class="surah-grid">
       {{range $i, $s := .Surahs}}
         <li class="surah-card">
