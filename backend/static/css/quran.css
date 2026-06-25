@@ -37,6 +37,36 @@
 .ayah {
 	margin: var(--sp-6) 0;
 	scroll-margin-top: 8rem;
+	position: relative;
+}
+
+/* Bookmark button — sits at the start of each ayah (RTL: visually
+ * at the inline-end which is the right). Subtle by default, gold
+ * when bookmarked. */
+.ayah-bookmark {
+	position: absolute;
+	top: 0;
+	inset-inline-end: calc(100% + var(--sp-1));
+	background: transparent;
+	border: 0;
+	color: var(--ink-soft);
+	font-size: var(--fs-md);
+	cursor: pointer;
+	padding: 2px var(--sp-1);
+	opacity: 0;
+	transition: opacity var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.ayah:hover .ayah-bookmark,
+.ayah:focus-within .ayah-bookmark,
+.ayah-bookmark:focus-visible,
+.ayah-bookmark[aria-pressed="true"] {
+	opacity: 1;
+}
+.ayah-bookmark:hover { color: var(--accent); }
+.ayah-bookmark[aria-pressed="true"] {
+	color: var(--accent);
+	opacity: 1;
 }
 .ayah-text {
 	margin: 0;

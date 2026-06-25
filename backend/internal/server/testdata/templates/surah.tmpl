@@ -23,6 +23,17 @@
         <span class="surah-title-num">{{.Surah.Number}}</span>
         <span class="surah-title-name">{{.Surah.Name}}</span>
       </h1>
+      {{/*
+        Surah metadata row — Latin name, revelation type, English
+        description. Each span is conditionally rendered; the
+        wrapper itself is always present so the markup can be
+        selected even when the DB has no metadata yet.
+      */}}
+      <div class="sh-meta" data-component="sh-meta">
+        {{if .Surah.NameLatin}}<span class="sh-meta-latin">{{.Surah.NameLatin}}</span>{{end}}
+        {{if .Surah.RevelationType}}<span class="sh-meta-rev" data-type="{{.Surah.RevelationType}}">{{.Surah.RevelationType}}</span>{{end}}
+        {{if .Surah.EnglishTranslation}}<span class="sh-meta-translation">{{.Surah.EnglishTranslation}}</span>{{end}}
+      </div>
       <div class="sh-nav-right">
         {{if .Next}}<a class="sh-next" href="/surah/{{.Next.Number}}" rel="next">{{.Next.Number}} →</a>{{else}}<span class="sh-next disabled">→</span>{{end}}
       </div>
@@ -72,7 +83,10 @@
       {{$lastWordNo := 0}}
       {{range $t := $ae.Ayah.Tokens}}{{if eq $t.Kind "word"}}{{if gt $t.WordNo $lastWordNo}}{{$lastWordNo = $t.WordNo}}{{end}}{{end}}{{end}}
 
-      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}">
+      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}">
+        <button type="button" class="ayah-bookmark" data-component="ayah-bookmark"
+                data-surah="{{$.Surah.Number}}" data-ayah="{{$an}}"
+                aria-label="Bookmark verse {{$an}}" title="Bookmark">☆</button>
         <p class="ayah-text" lang="ar" dir="rtl">
           {{- range $t := $ae.Ayah.Tokens -}}
             {{- if eq $t.Kind "word" -}}

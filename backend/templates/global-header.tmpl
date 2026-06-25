@@ -1,21 +1,31 @@
 {{define "global-header"}}<header class="global-header" role="banner">
   <div class="gh-inner">
     <a class="gh-brand" href="/">Quran Reader</a>
-    <form class="gh-search" role="search" data-component="global-search" method="get" action="/search">
-      <input type="search" name="q" placeholder="Search…" aria-label="Search" autocomplete="off">
-      <select name="type" aria-label="Search type">
-        <option value="english" selected>english</option>
-        <option value="translation">translation</option>
-        <option value="arabic">arabic</option>
-        <option value="root">root</option>
-      </select>
-      <button type="submit">Search</button>
-    </form>
+    <div class="gh-search-wrap">
+      <form class="gh-search" role="search" data-component="global-search" method="get" action="/search">
+        <input type="search" name="q" placeholder="Search…" aria-label="Search" autocomplete="off" data-component="gh-search-input">
+        <select name="type" aria-label="Search type">
+          <option value="english" selected>english</option>
+          <option value="translation">translation</option>
+          <option value="arabic">arabic</option>
+          <option value="root">root</option>
+        </select>
+        <button type="submit">Search</button>
+      </form>
+      <div class="gh-recent" data-component="gh-recent" hidden>
+        <div class="gh-recent-head">Recent</div>
+        <ul class="gh-recent-list"></ul>
+        <button type="button" class="gh-recent-clear">Clear history</button>
+      </div>
+    </div>
     <nav class="gh-nav" aria-label="Primary">
       <a href="/roots">Roots</a>
       <a href="/concordance">Concordance</a>
       <a href="/about">About</a>
+      <button class="gh-bookmarks" data-component="bookmarks-toggle" aria-label="Bookmarks" title="Bookmarks">★</button>
       <button class="gh-theme" data-component="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
     </nav>
   </div>
+  <!-- Bookmarks drawer (populated by bookmarks.js) -->
+  <aside class="gh-bookmarks-drawer" data-component="bookmarks-drawer" hidden aria-label="Saved bookmarks"></aside>
 </header>{{end}}

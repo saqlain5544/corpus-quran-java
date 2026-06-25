@@ -943,3 +943,140 @@ func TestSidePanelCSSNoGrid(t *testing.T) {
 		t.Error("quran.css missing .ssp-freq-list")
 	}
 }
+
+// ── Reading-experience features (Tier 1 set) ──────────────────
+//
+// Four user-facing additions wired to localStorage:
+//   1. Surah metadata (Latin name, revelation type, English desc)
+//      on the surah page header.
+//   2. Recent-searches dropdown in the global header.
+//   3. Verse bookmarks — per-ayah star button + drawer.
+//   4. Continue-reading banner on the homepage.
+
+func TestSurahPageShowsMetadata(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/2", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// The wrapper div is always present (CSS :empty hides it
+	// when the DB hasn't been populated). When the data agent fills
+	// in english_name / revelation_type / english_translation,
+	// the inner spans will render automatically.
+	if !strings.Contains(body, `class="sh-meta"`) {
+		t.Error("surah page missing .sh-meta wrapper — Latin name, revelation type, English description will not render when data is populated")
+	}
+}
+
+func TestRecentSearchesJSWired(t *testing.T) {
+	// The script must be linked from layout.tmpl and the dropdown
+	// markup must be present in global-header.tmpl.
+	layoutBytes, err := os.ReadFile("../../../backend/internal/server/testdata/templates/layout.tmpl")
+	if err != nil {
+		t.Fatalf("read layout.tmpl: %v", err)
+	}
+	if !strings.Contains(string(layoutBytes), "/static/js/recent-searches.js") {
+		t.Error("layout.tmpl does not load /static/js/recent-searches.js")
+	}
+
+	headerBytes, err := os.ReadFile("../../../backend/internal/server/testdata/templates/global-header.tmpl")
+	if err != nil {
+		t.Fatalf("read global-header.tmpl: %v", err)
+	}
+	hdr := string(headerBytes)
+	if !strings.Contains(hdr, `data-component="gh-recent"`) {
+		t.Error("global-header.tmpl missing gh-recent dropdown markup")
+	}
+	if !strings.Contains(hdr, `data-component="gh-search-input"`) {
+		t.Error("global-header.tmpl missing gh-search-input")
+	}
+	if !strings.Contains(hdr, "gh-recent-clear") {
+		t.Error("global-header.tmpl missing gh-recent-clear button")
+	}
+}
+
+func TestBookmarksJSWired(t *testing.T) {
+	layoutBytes, err := os.ReadFile("../../../backend/internal/server/testdata/templates/layout.tmpl")
+	if err != nil {
+		t.Fatalf("read layout.tmpl: %v", err)
+	}
+	if !strings.Contains(string(layoutBytes), "/static/js/bookmarks.js") {
+		t.Error("layout.tmpl does not load /static/js/bookmarks.js")
+	}
+
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/2", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// Every ayah section must carry a bookmark button.
+	if !strings.Contains(body, `data-component="ayah-bookmark"`) {
+		t.Error("surah page missing per-ayah bookmark buttons")
+	}
+	// Header must have the bookmarks drawer markup.
+	if !strings.Contains(body, `data-component="bookmarks-drawer"`) {
+		t.Error("global header missing bookmarks drawer")
+	}
+	if !strings.Contains(body, `data-component="bookmarks-toggle"`) {
+		t.Error("global header missing bookmarks toggle button")
+	}
+}
+
+func TestContinueReadingJSWired(t *testing.T) {
+	layoutBytes, err := os.ReadFile("../../../backend/internal/server/testdata/templates/layout.tmpl")
+	if err != nil {
+		t.Fatalf("read layout.tmpl: %v", err)
+	}
+	if !strings.Contains(string(layoutBytes), "/static/js/continue-reading.js") {
+		t.Error("layout.tmpl does not load /static/js/continue-reading.js")
+	}
+
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `data-component="continue-reading"`) {
+		t.Error("homepage missing continue-reading banner element")
+	}
+}
+
+func TestShMetaCSS(t *testing.T) {
+	// The CSS must style .sh-meta and its three child classes.
+	cssBytes, err := os.ReadFile("../../../backend/static/css/components.css")
+	if err != nil {
+		t.Fatalf("read components.css: %v", err)
+	}
+	css := string(cssBytes)
+	for _, sel := range []string{".sh-meta", ".sh-meta-latin", ".sh-meta-rev", ".sh-meta-translation"} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("components.css missing %q — surah header metadata won't render correctly", sel)
+		}
+	}
+	// Meccan vs Medinan data-type styling should be present.
+	if !strings.Contains(css, `[data-type="Meccan"]`) || !strings.Contains(css, `[data-type="Medinan"]`) {
+		t.Error("components.css: Meccan/Medinan revelation-type styles missing")
+	}
+}
+
+func TestBookmarkAndRecentCSS(t *testing.T) {
+	cssBytes, err := os.ReadFile("../../../backend/static/css/components.css")
+	if err != nil {
+		t.Fatalf("read components.css: %v", err)
+	}
+	css := string(cssBytes)
+	for _, sel := range []string{".gh-recent", ".gh-recent-list", ".gh-recent-clear", ".gh-bookmarks", ".gh-bookmarks-drawer", ".gh-bookmarks-list"} {
+		if !strings.Contains(css, sel) {
+			t.Errorf("components.css missing %q — bookmarks / recent-searches UI will be broken", sel)
+		}
+	}
+}

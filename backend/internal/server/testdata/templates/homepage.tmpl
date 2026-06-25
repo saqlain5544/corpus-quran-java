@@ -6,6 +6,11 @@
     <p class="layout-header-meta">Read, search, and explore the Quran with full morphology.</p>
   </header>
 
+  <!-- Continue-reading banner — populated by continue-reading.js
+       from localStorage. Hidden when no last-read is recorded. -->
+  <aside class="continue-reading" data-component="continue-reading" hidden
+         aria-label="Continue reading"></aside>
+
   {{if .Stats}}
   <ol class="home-stats" aria-label="Quran statistics">
     <li class="home-stat">

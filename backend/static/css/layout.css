@@ -107,6 +107,61 @@ button { font: inherit; color: inherit; }
 .page-header h1 { font: 600 var(--fs-2xl)/1.2 var(--font-latin); margin: 0; }
 .page-subtitle { color: var(--ink-muted); margin-top: var(--sp-2); }
 
+/* ── Homepage: continue-reading banner ──────────────────────── */
+/* Shows the user's last-read verse. Hidden by default; the
+ * continue-reading.js module unhides + populates it from
+ * localStorage on homepage load. */
+.continue-reading {
+  margin: 0 0 var(--sp-4);
+}
+.continue-reading[hidden] { display: none; }
+.continue-reading .continue-link {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-4);
+  background: linear-gradient(
+    135deg,
+    oklch(50% 0.110 70 / 0.10),
+    oklch(50% 0.110 70 / 0.04)
+  );
+  border: var(--border-w) solid var(--accent);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  text-decoration: none;
+  transition: transform var(--dur-fast) var(--ease-out),
+              border-color var(--dur-fast) var(--ease-out);
+}
+.continue-reading .continue-link:hover,
+.continue-reading .continue-link:focus-visible {
+  transform: translateX(-2px);
+  border-color: var(--accent-strong);
+  text-decoration: none;
+}
+.continue-reading .continue-label {
+  font: 600 var(--fs-xs)/1 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.continue-reading .continue-ref {
+  font: 600 var(--fs-md)/1 var(--font-latin);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .continue-reading .continue-link {
+    grid-template-columns: 1fr auto;
+  }
+  .continue-reading .continue-ref {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-size: var(--fs-sm);
+  }
+}
+
 /* ── Homepage: stats strip ──────────────────────────────────── */
 /* Aggregate counts (surahs / ayahs / words / roots / translations)
  * shown above the surah grid. Each stat is its own cell so they

@@ -53,9 +53,96 @@
   cursor: pointer;
 }
 .gh-search button:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+
+/* Search-wrapper holds both the form and the recent-searches
+ * dropdown so they can share a position-relative anchor. */
+.gh-search-wrap { position: relative; min-width: 0; }
+
+/* Recent searches dropdown — opens on focus, populated by
+ * recent-searches.js from localStorage. Hidden when empty. */
+.gh-recent {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px oklch(0% 0 0 / 0.10);
+  z-index: calc(var(--z-sticky) + 1);
+  overflow: hidden;
+}
+.gh-recent[hidden] { display: none; }
+.gh-recent-head {
+  font: 600 var(--fs-xs)/1 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.gh-recent-list li {
+  display: block;
+}
+.gh-recent-list button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-2);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+.gh-recent-list button:hover,
+.gh-recent-list button:focus-visible {
+  background: var(--word-hover-bg);
+}
+.gh-recent-q {
+  font: 600 var(--fs-sm)/1 var(--font-latin);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gh-recent-q.ar {
+  font: 600 var(--fs-sm)/1 var(--font-arabic);
+  direction: rtl;
+  text-align: right;
+}
+.gh-recent-type {
+  font: var(--fs-xs)/1 var(--font-latin);
+  color: var(--ink-soft);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.gh-recent-clear {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-top: var(--border-w) solid var(--rule);
+  color: var(--ink-soft);
+  font: var(--fs-xs)/1 var(--font-latin);
+  cursor: pointer;
+}
+.gh-recent-clear:hover { color: var(--ink); background: var(--word-hover-bg); }
+
 .gh-nav { display: flex; gap: var(--sp-3); align-items: center; }
 .gh-nav a { color: var(--ink); }
-.gh-theme {
+.gh-theme,
+.gh-bookmarks {
   background: none;
   border: 0;
   cursor: pointer;
@@ -64,7 +151,96 @@
   padding: var(--sp-1) var(--sp-2);
   border-radius: var(--radius-sm);
 }
-.gh-theme:hover { background: var(--bg-sunken); }
+.gh-theme:hover,
+.gh-bookmarks:hover { background: var(--bg-sunken); }
+.gh-bookmarks[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--word-hover-bg);
+}
+
+/* Bookmarks drawer — slides down from the header when the star
+ * toggle is pressed. Contains the list of saved s:v bookmarks with
+ * delete buttons. */
+.gh-bookmarks-drawer {
+  position: absolute;
+  top: 100%;
+  right: var(--sp-4);
+  width: 22rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  box-shadow: 0 6px 24px oklch(0% 0 0 / 0.14);
+  z-index: calc(var(--z-sticky) + 1);
+}
+.gh-bookmarks-drawer[hidden] { display: none; }
+.gh-bookmarks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--sp-3);
+  border-bottom: var(--border-w) solid var(--rule);
+  font: 600 var(--fs-xs)/1 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.gh-bookmarks-head button {
+  font: var(--fs-xs)/1 var(--font-latin);
+  text-transform: none;
+  letter-spacing: 0;
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: var(--sp-1);
+}
+.gh-bookmarks-head button:hover { color: var(--ink); }
+.gh-bookmarks-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2) 0;
+}
+.gh-bookmarks-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-bookmarks-list li:last-child { border-bottom: 0; }
+.gh-bookmarks-list a {
+  font: 600 var(--fs-sm)/1.3 var(--font-latin);
+  color: var(--ink);
+  text-decoration: none;
+}
+.gh-bookmarks-list a:hover,
+.gh-bookmarks-list a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.gh-bookmarks-list .gbk-remove {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: var(--fs-sm)/1 var(--font-latin);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.gh-bookmarks-list .gbk-remove:hover {
+  background: var(--error);
+  color: var(--bg-elev);
+}
+.gh-bookmarks-empty {
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--ink-soft);
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  text-align: center;
+}
 
 @media (max-width: 720px) {
   .gh-inner { grid-template-columns: 1fr auto; gap: var(--sp-2); }
@@ -85,11 +261,17 @@
   border-bottom: var(--border-w) solid var(--rule);
   padding: var(--sp-3) 0;
 }
-.sh-row {
+/* Nav row: prev · name · next */
+.sh-nav-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: var(--sp-4);
+  grid-template-columns: auto 1fr auto;
   align-items: center;
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-2);
+}
+.sh-nav-left, .sh-nav-right {
+  display: flex;
+  gap: var(--sp-2);
 }
 .surah-title {
   margin: 0;
@@ -97,22 +279,73 @@
   display: flex;
   gap: var(--sp-3);
   align-items: baseline;
+  justify-content: center;
 }
 .surah-title-num { color: var(--accent); font: 600 var(--fs-md)/1 var(--font-latin); }
 .surah-title-name { font: 600 var(--fs-xl)/1 var(--font-arabic); }
+
+/* Surah metadata row — Latin name, revelation type, English
+ * descriptor. Sits between the title row and the control row.
+ * Distinguishes Meccan vs Medinan via the data-type attribute
+ * so we can tint the badge. */
+.sh-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--sp-3);
+  margin: var(--sp-1) 0;
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  color: var(--ink-muted);
+}
+/* When none of the metadata fields are populated (DB still has
+ * empty values for english_name etc.), hide the wrapper so it
+ * doesn't take up an empty band of vertical space. */
+.sh-meta:empty {
+  display: none;
+}
+.sh-meta-latin {
+  font-style: italic;
+}
+.sh-meta-rev {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  padding: 1px var(--sp-2);
+  border-radius: 2px;
+  background: var(--word-hover-bg);
+  color: var(--accent);
+}
+.sh-meta-rev[data-type="Meccan"] {
+  background: oklch(50% 0.110 70 / 0.15);
+  color: oklch(40% 0.120 65);
+}
+.sh-meta-rev[data-type="Medinan"] {
+  background: oklch(48% 0.080 155 / 0.18);
+  color: oklch(35% 0.090 160);
+}
+.sh-meta-translation {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* Control row: search · font · line · trans */
+.sh-ctrl-row {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: center;
+  flex-wrap: wrap;
+}
 .sh-search input {
   width: 100%;
+  min-width: 12rem;
   padding: var(--sp-2) var(--sp-3);
   background: var(--bg-elev);
   border: var(--border-w) solid var(--rule);
   border-radius: var(--radius-md);
   color: var(--ink);
-  font-size: var(--fs-sm);  /* 14px — smaller than the body 16px so the
-                                secondary search field doesn't compete
-                                with the surah title */
-  max-height: 60px;          /* cap the input height so it never
-                                overwhelms the rest of the header on
-                                narrow viewports */
+  font-size: var(--fs-sm);
 }
 .sh-search input.is-error { border-color: var(--error); }
 .sh-controls { display: flex; gap: var(--sp-4); align-items: center; }
@@ -273,69 +506,68 @@
 .word-tooltip .wt-loading { color: var(--ink-muted); margin: 0; font-style: italic; }
 .word-tooltip .wt-empty { color: var(--ink-soft); margin: 0; font-style: italic; }
 
-/* 1. Word — large, Arabic, centered */
+/* 1. Word — large, Uthmani, centered */
 .word-tooltip .wt-word {
   font: 700 var(--fs-lg)/1.2 var(--font-arabic);
-  margin: 0 0 var(--sp-3);
-  padding: 0 0 var(--sp-2);
-  border-bottom: var(--border-w) solid var(--rule);
+  margin: 0 0 var(--sp-2);
   text-align: center;
   color: var(--ink);
 }
 
-/* 2–4. Root / Lemma / Gloss — label : value list */
-.word-tooltip .wt-fields {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: var(--sp-3);
-  row-gap: var(--sp-1);
-  margin: 0 0 var(--sp-2);
-}
-.word-tooltip .wt-fields dt {
-  color: var(--ink-muted);
-  font-weight: 500;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  align-self: baseline;
-}
-.word-tooltip .wt-fields dd { margin: 0; }
-
-/* 2. Root — Arabic letters with a space between each */
-.word-tooltip .wt-root {
-  font: 600 var(--fs-md)/1 var(--font-arabic);
-  color: var(--accent);
-  letter-spacing: 0.05em;
-  word-spacing: 0.5em;
-}
-
-/* 3. Lemma — bare stem, no diacritics */
-.word-tooltip .wt-lemma {
-  font: 600 var(--fs-md)/1 var(--font-arabic);
-  color: var(--ink);
-}
-
-/* 4. Gloss — English */
-.word-tooltip .wt-gloss { color: var(--ink); }
-
-/* 5. POS · Function — small caps at the bottom */
-.word-tooltip .wt-meta {
+/* 2. Root — Arabic + Buckwalter on same line */
+.word-tooltip .wt-root-line {
+  margin: var(--sp-2) 0;
   display: flex;
   gap: var(--sp-2);
   align-items: baseline;
-  flex-wrap: wrap;
-  padding-top: var(--sp-2);
-  border-top: var(--border-w) solid var(--rule);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  justify-content: center;
 }
-.word-tooltip .wt-pos {
-  font-weight: 700;
+.word-tooltip .wt-root-ar {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
   color: var(--accent);
 }
-.word-tooltip .wt-fn { color: var(--ink-muted); }
-.word-tooltip .wt-sep { color: var(--ink-soft); }
+.word-tooltip .wt-root-bw {
+  font: var(--fs-sm)/1 var(--font-mono);
+  color: var(--ink-soft);
+}
+
+/* 3. Lemma — bare stem, centered */
+.word-tooltip .wt-lemma {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--ink);
+  margin: var(--sp-2) 0;
+  text-align: center;
+}
+
+/* 4. Gloss — after separator */
+.word-tooltip .wt-gloss { color: var(--ink); margin: var(--sp-2) 0; }
+
+/* 5. Morphology Tags */
+.word-tooltip .wt-tags {
+  margin: var(--sp-2) 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.word-tooltip .wt-tag {
+  font-size: var(--fs-xs);
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--sp-2);
+  color: var(--ink-muted);
+}
+
+/* 6. Grammatical Tags */
+.word-tooltip .wt-gram { margin: var(--sp-2) 0; color: var(--ink-soft); font-size: var(--fs-xs); }
+.word-tooltip .wt-gram-tags { color: var(--ink-muted); }
+
+/* Separator lines */
+.word-tooltip .wt-sep {
+  border: 0;
+  border-top: var(--border-w) solid var(--rule);
+  margin: var(--sp-2) 0;
+}
 
 /* ── Modal ─────────────────────────────────────────────────── */
 .word-modal {
