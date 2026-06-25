@@ -321,7 +321,13 @@ func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, lim
 	}
 
 	// Candidate expansion via the inverted index.
-	candidates := expandPostings(postings, qTokens)
+	var bkTree types.BKTreeIface
+	if isTranslation {
+		bkTree = m.TranslationBKTree
+	} else {
+		bkTree = m.GlossBKTree
+	}
+	candidates := expandPostings(postings, bkTree, qTokens)
 
 	// Pre-computed BM25 stats (cached on MasaqIndex at LoadAll time).
 	// Old code rebuilt these per request (~10ms saved per query).
@@ -568,17 +574,16 @@ func seenCount(m *types.MasaqIndex, tok string, field func(types.MasaqSegment) s
 // AUTO-fuzziness edit distance of any query token. Returns the
 // candidate set as a deduplicated, sorted []uint64 slice.
 //
-// Complexity: O(Σ|posting_lit| + O(V) for prefix + O(V) for fuzzy)
-// where V is the vocabulary size. V ≈ 5K for English, so the O(V)
-// scans are negligible compared to the previous O(N) full scan.
+// Complexity:
+//   - Literal: O(Σ|posting_lit|)
+//   - Prefix: O(V) scan of vocabulary (acceptable for V ≈ 5K)
+//   - Fuzzy: O(c^k · log V) via the BK-tree if `bkTree != nil`,
+//            else falls back to O(V) linear scan
 //
-// For prefix queries (e.g. "mer" → mercy, merciful) and fuzzy
-// queries (e.g. "rain" → reign, brain) we use linear vocabulary
-// scans; for our scale (5K entries) a Trie / BK-tree is overkill.
-// When the corpus grows past ~50K unique tokens, we should swap in
-// a radix tree and BK-tree — see /tmp/algo-research/01_data_structures.md
-// sections 2 and 3.
-func expandPostings(postings map[string][]uint64, qTokens []string) []uint64 {
+// When the corpus grows past ~50K unique tokens, swap in a proper
+// radix tree for prefix queries too — see
+// /tmp/algo-research/01_data_structures.md section 2.
+func expandPostings(postings map[string][]uint64, bkTree types.BKTreeIface, qTokens []string) []uint64 {
 	if len(postings) == 0 {
 		return nil
 	}
@@ -590,7 +595,9 @@ func expandPostings(postings map[string][]uint64, qTokens []string) []uint64 {
 		}
 	}
 	// Prefix expansion: any vocab word starting with a query token
-	// (and longer) is a candidate via the PREFIX class.
+	// (and longer) is a candidate via the PREFIX class. Linear scan
+	// over V — acceptable for V ≈ 5K; would benefit from a radix
+	// tree at V > ~50K.
 	for _, qt := range qTokens {
 		if len(qt) < 2 {
 			continue
@@ -606,8 +613,8 @@ func expandPostings(postings map[string][]uint64, qTokens []string) []uint64 {
 			}
 		}
 	}
-	// Fuzzy expansion: any vocab word within AUTO-fuzz edit distance
-	// of a query token, with a 2-char prefix lock, is a candidate
+	// Fuzzy expansion: vocab words within AUTO-fuzz edit distance
+	// of the query token, with a 2-char prefix lock, are candidates
 	// via the FUZZY class.
 	for _, qt := range qTokens {
 		if len(qt) < 3 {
@@ -615,19 +622,38 @@ func expandPostings(postings map[string][]uint64, qTokens []string) []uint64 {
 		}
 		af := autoFuzziness(len(qt))
 		pre2 := qt[:2]
-		for v, posts := range postings {
-			if v == qt {
-				continue
-			}
-			if len(v) < 3 || v[:2] != pre2 {
-				continue
-			}
-			if abs(len(v)-len(qt)) > af {
-				continue
-			}
-			if Levenshtein(qt, v) <= af {
-				for _, key := range posts {
+		if bkTree != nil {
+			// Sub-linear via BK-tree. Query returns words within
+			// distance ≤ af; we then filter by the 2-char prefix
+			// lock (the BK-tree prune doesn't know about it).
+			matches := bkTree.Query(qt, af)
+			for _, m := range matches {
+				if m.Word == qt {
+					continue
+				}
+				if len(m.Word) < 3 || m.Word[:2] != pre2 {
+					continue
+				}
+				for _, key := range postings[m.Word] {
 					candSet[key] = struct{}{}
+				}
+			}
+		} else {
+			// Linear fallback — same semantics, O(V) per query.
+			for v, posts := range postings {
+				if v == qt {
+					continue
+				}
+				if len(v) < 3 || v[:2] != pre2 {
+					continue
+				}
+				if abs(len(v)-len(qt)) > af {
+					continue
+				}
+				if Levenshtein(qt, v) <= af {
+					for _, key := range posts {
+						candSet[key] = struct{}{}
+					}
 				}
 			}
 		}

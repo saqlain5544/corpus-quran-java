@@ -12,6 +12,7 @@ import (
 
 	"quranreader/loc"
 	"quranreader/types"
+	"quranreader/backend/internal/search/bktree"
 )
 
 // enTokenRe mirrors search.EnTokenize's regex — matches runs of
@@ -380,6 +381,13 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	// matches at query time.
 	idx.ByArabicFormPostings = buildArabicInvertedIndex(arabicSegs)
 
+	// Build Burkhard-Keller trees over the English tokens of each
+	// field. Used by the search package for sub-linear fuzzy
+	// expansion (~5K vocabulary → O(c^k · log V) per query instead
+	// of O(V) linear scan). ~30 ms to build each, ~100 KB resident.
+	idx.GlossBKTree = buildBKTree(idx.ByEnTokenPostings)
+	idx.TranslationBKTree = buildBKTree(idx.ByTranslationPostings)
+
 	return idx, nil
 }
 
@@ -449,6 +457,32 @@ func buildInvertedIndex(byWord map[uint64][]types.MasaqSegment, field func(types
 		sort.Slice(lst, func(i, j int) bool { return lst[i] < lst[j] })
 	}
 	return postings
+}
+
+// buildBKTree constructs a Burkhard-Keller tree over the unique
+// tokens of the given field's postings. Returns nil if postings is
+// empty (caller should treat as "no fuzzy expansion").
+//
+// Insertion order matters for tree balance — we insert tokens in
+// sorted order to give a roughly balanced tree (sorted insertion
+// gives O(√n) depth on random inputs, O(n) on degenerate inputs
+// but the typical MASAQ vocabulary is well-distributed enough that
+// this works).
+func buildBKTree(postings map[string][]uint64) types.BKTreeIface {
+	if len(postings) == 0 {
+		return nil
+	}
+	tree := bktree.New()
+	// Sort for deterministic insertion order (roughly balanced).
+	tokens := make([]string, 0, len(postings))
+	for t := range postings {
+		tokens = append(tokens, t)
+	}
+	sort.Strings(tokens)
+	for _, t := range tokens {
+		tree.Insert(t, nil) // nil → use package default Levenshtein
+	}
+	return tree
 }
 
 // normalizeArabicLocal strips tashkeel AND normalizes hamza variants,

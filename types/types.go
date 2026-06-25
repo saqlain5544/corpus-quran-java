@@ -96,6 +96,12 @@ type MasaqSegment struct {
 // length per field, pre-computed at LoadAll time so the per-query
 // BM25 calculation is O(matches) instead of O(N).
 //
+// GlossBKTree / TranslationBKTree hold Burkhard-Keller trees over
+// the unique English tokens of each field, used for sub-linear
+// fuzzy expansion (e.g. "rain" → reign, brain, train). See
+// backend/internal/search/bktree for the structure. nil-safe: when
+// nil, the search falls back to linear vocabulary scan.
+//
 // Note: there are ~23 cases where MASAQ and the XML disagree on word
 // boundaries (MASAQ merges "waw + ma" into "wama" while the XML
 // keeps them as two tokens). For those, the strict ByWord lookup
@@ -109,6 +115,28 @@ type MasaqIndex struct {
 	ByArabicFormPostings  map[string][]uint64 // normalized Arabic surface form → postings
 	GlossAvgDocLen        float64             // avg |unique tokens| per doc (Gloss)
 	TranslationAvgDocLen  float64             // avg |unique tokens| per doc (Translation)
+	// GlossBKTree / TranslationBKTree are interface-typed so the
+	// types package doesn't import bktree (which would create a
+	// cycle). The data package populates them with concrete
+	// *bktree.Tree values.
+	GlossBKTree       BKTreeIface
+	TranslationBKTree BKTreeIface
+}
+
+// BKTreeIface is the minimal interface the search package needs
+// from a BK-tree over an English token vocabulary. The data package
+// populates this with a *bktree.Tree from
+// backend/internal/search/bktree.
+type BKTreeIface interface {
+	// Query returns all vocabulary words within edit distance k of
+	// target, sorted by distance then alphabetically.
+	Query(target string, k int) []BKMatch
+}
+
+// BKMatch is one match from a BK-tree query.
+type BKMatch struct {
+	Word string
+	Dist int
 }
 
 // RootEntry is one root with its meanings and occurrences.

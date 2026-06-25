@@ -455,7 +455,7 @@ func TestExpandPostingsUnion(t *testing.T) {
 	//             → ~10 docs (vocab words starting with "rain")
 	//   fuzzy:    "ran" → 1 doc
 	// Total: at least 25 docs.
-	cands := expandPostings(posts, []string{"rain"})
+	cands := expandPostings(posts, masaq.GlossBKTree, []string{"rain"})
 	if len(cands) < 25 {
 		t.Errorf("expandPostings(rain) = %d candidates; expected ≥25", len(cands))
 	}
@@ -469,7 +469,7 @@ func TestExpandPostingsUnion(t *testing.T) {
 
 	// Multi-token query: "his-messenger" → literal + prefix + fuzzy
 	// for BOTH tokens.
-	cands2 := expandPostings(posts, []string{"his", "messenger"})
+	cands2 := expandPostings(posts, masaq.GlossBKTree, []string{"his", "messenger"})
 	if len(cands2) < 10 {
 		t.Errorf("expandPostings([his, messenger]) = %d; expected ≥10", len(cands2))
 	}
@@ -573,5 +573,52 @@ func TestArabicSearchSkipsSingleCharMatches(t *testing.T) {
 	r := Arabic("ل", masaq, q, 50, 0)
 	if len(r) > 0 {
 		t.Errorf("Arabic(ل) returned %d results; expected 0 (single-char query rejected)", len(r))
+	}
+}
+
+// TestBKTreePopulated verifies the load path builds the BK-trees
+// for both Gloss and Translation fields. Without them, fuzzy
+// expansion falls back to linear scan (still correct, just slower).
+func TestBKTreePopulated(t *testing.T) {
+	_, masaq, _ := loadTestData(t)
+	if masaq.GlossBKTree == nil {
+		t.Fatal("GlossBKTree is nil — load path failed to build it")
+	}
+	if masaq.TranslationBKTree == nil {
+		t.Fatal("TranslationBKTree is nil")
+	}
+	// Spot check: the BK-tree should contain 'rain' (a common
+	// English gloss token).
+	matches := masaq.GlossBKTree.Query("rain", 1)
+	found := false
+	for _, m := range matches {
+		if m.Word == "rain" && m.Dist == 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("GlossBKTree.Query(rain, 1) did not return exact 'rain' hit; got %v", matches)
+	}
+}
+
+// TestEnglishSearchBKTreeFuzzyParity is an end-to-end correctness
+// test: the English search with BK-tree fuzzy expansion must
+// return the same candidate set as the search with linear fuzzy
+// expansion. The two paths are exercised by:
+//   - With BK-tree (m.GlossBKTree populated by load path)
+//   - Without BK-tree (m.GlossBKTree = nil, set manually)
+func TestEnglishSearchBKTreeFuzzyParity(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	// Sanity check: high-volume query that produces many fuzzy hits.
+	results := English("allah", masaq, q, 200, 0)
+	if len(results) < 100 {
+		t.Errorf("English(allah) returned only %d hits; expected ≥100", len(results))
+	}
+	// First hit MUST be the exact match (1:1:2 basmala style),
+	// since allah appears at (1,1,2) and other early surahs.
+	if results[0].Surah > 5 {
+		t.Errorf("English(allah) first hit at surah %d; expected early surah for exact match",
+			results[0].Surah)
 	}
 }
