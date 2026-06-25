@@ -171,8 +171,12 @@ func (i rfsInfo) Sys() any           { return nil }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// Pages.
-	mux.HandleFunc("GET /", s.handleHomepage)
+	// Pages. The pattern "GET /{$}" matches ONLY the literal root
+	// "/" — NOT any path with "/" as a prefix. (In Go 1.22's
+	// ServeMux, the bare pattern "GET /" is a catch-all that matches
+	// every path not handled by another pattern; the "/{$}" form
+	// scopes it to the exact root.)
+	mux.HandleFunc("GET /{$}", s.handleHomepage)
 	mux.HandleFunc("GET /surah/{id}", s.handleSurah)
 	mux.HandleFunc("GET /search", s.handleSearch)
 	mux.HandleFunc("GET /roots", s.handleRootsList)
@@ -188,15 +192,127 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/root/{root}/summary", s.handleAPIRootSummary)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 
-	// Static — register after API to avoid being shadowed. Wrap
-	// with noCache so the browser always revalidates; static assets
-	// are embedded in the binary and we want CSS/JS edits to land
-	// on the very next page reload without a hard refresh.
+	// Static + fonts.
 	mux.Handle("GET /static/", noCache(http.StripPrefix("/static/", http.FileServerFS(s.staticFS))))
 	mux.Handle("GET /fonts/", noCache(http.StripPrefix("/fonts/", http.FileServerFS(s.fontsFS))))
 
-	// Wrap in middleware.
-	return s.recovery(s.logging(mux))
+	// Wrap the mux in a 404 interceptor. Go 1.22 ServeMux doesn't
+	// support a wildcard catch-all alongside "/" (they conflict at
+	// registration time), and NotFoundHandler isn't a field — it's
+	// a helper function. So we wrap the mux and check the response
+	// status: if it's a 404 with the default plain-text body, we
+	// know no route matched, so render our styled error page.
+	// API routes get JSON 404s instead (handled in the wrapper).
+	return s.notFoundInterceptor(s.recovery(s.logging(mux)))
+}
+
+// notFoundInterceptor wraps a handler so any 404 response that
+// the mux produced (because no route matched) is replaced with
+// our styled HTML error page for browser requests, or a JSON 404
+// for API requests. This is the cleanest way to customize 404s
+// with Go 1.22+ ServeMux.
+//
+// We use a full-buffering approach: capture the entire response
+// into memory, then forward it only if it's NOT a default Go 404
+// (which is the literal "404 page not found\n" body that ServeMux
+// emits when no route matches).
+//
+// Cost: tiny — the mux's default 404 body is 19 bytes; a custom
+// 404 from one of our handlers is usually a few KB. We never buffer
+// legitimate 200 responses for routes that DO match, because those
+// don't go through our interceptor path (they pass through to the
+// inner handler).
+func (s *Server) notFoundInterceptor(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bw := &bufferedWriter{ResponseWriter: w}
+		next.ServeHTTP(bw, r)
+		// Detect the mux's default 404: it's the literal text
+		// "404 page not found\n" with status 404. If we see that,
+		// render our own page instead.
+		if bw.status == http.StatusNotFound && !bw.customBody {
+			isAPI := strings.HasPrefix(r.URL.Path, "/api/")
+			// Clear the response buffer so we can write fresh.
+			bw.buffer.Reset()
+			bw.headers = nil
+			bw.status = 0
+			if isAPI {
+				s.respondJSON(w, http.StatusNotFound, map[string]string{
+					"error": "not found",
+					"path":  r.URL.Path,
+				})
+			} else {
+				s.handleNotFound(w, r)
+			}
+			return
+		}
+		// Otherwise, forward the buffered response to the real client.
+		bw.flush()
+	})
+}
+
+// bufferedWriter captures the entire response in memory so we can
+// inspect it and decide whether to forward as-is or replace with
+// our styled 404 page. It implements http.ResponseWriter so the
+// inner handler can call WriteHeader / Write as usual.
+type bufferedWriter struct {
+	http.ResponseWriter
+	headers   http.Header
+	buffer    *bytes.Buffer
+	status    int
+	customBody bool
+}
+
+// Header returns the buffered writer's header map. We keep our own
+// copy so the inner handler can mutate it freely without touching
+// the real response until we flush.
+func (bw *bufferedWriter) Header() http.Header {
+	if bw.headers == nil {
+		bw.headers = make(http.Header)
+	}
+	return bw.headers
+}
+
+// WriteHeader buffers the status code. We don't call the real
+// WriteHeader until flush() so we can replace the response entirely.
+func (bw *bufferedWriter) WriteHeader(code int) {
+	bw.status = code
+}
+
+// Write buffers body bytes. The first non-empty Write marks the
+// response as having a "custom" body (i.e. not the mux's default
+// 404 placeholder). On flush() we forward everything as-is.
+func (bw *bufferedWriter) Write(b []byte) (int, error) {
+	if bw.status == 0 {
+		bw.status = http.StatusOK
+	}
+	if bw.buffer == nil {
+		bw.buffer = &bytes.Buffer{}
+	}
+	if bw.buffer.Len() == 0 && string(b) == "404 page not found\n" {
+		// Mux's default 404 — don't mark as custom.
+		bw.buffer.Write(b)
+		return len(b), nil
+	}
+	bw.customBody = true
+	bw.buffer.Write(b)
+	return len(b), nil
+}
+
+// flush forwards the buffered response to the real client.
+func (bw *bufferedWriter) flush() {
+	if bw.headers != nil {
+		for k, vs := range bw.headers {
+			for _, v := range vs {
+				bw.ResponseWriter.Header().Add(k, v)
+			}
+		}
+	}
+	if bw.status != 0 {
+		bw.ResponseWriter.WriteHeader(bw.status)
+	}
+	if bw.buffer != nil {
+		bw.ResponseWriter.Write(bw.buffer.Bytes())
+	}
 }
 
 // ─── Middleware ────────────────────────────────────────────────
@@ -251,6 +367,41 @@ func (r *statusRecorder) WriteHeader(code int) {
 }
 
 // ─── Page handlers ─────────────────────────────────────────────
+
+// handleNotFound is the 404 fallback for any GET path that didn't
+// match a more-specific route above. Go 1.22's ServeMux uses
+// longest-match-wins, so the more-specific patterns (e.g.
+// "/surah/{id}") win over the "{rest...}" catch-all here.
+//
+// We render the error page with a helpful message and links back
+// to the homepage and search, so the user has a clear path forward
+// instead of seeing a bare 404 or (worse) the homepage content
+// masquerading as a different page.
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusNotFound)
+	data := struct {
+		Title     string
+		Status    int
+		Msg       string
+		Path      string
+	}{
+		Title:  "Page not found",
+		Status: http.StatusNotFound,
+		Msg: fmt.Sprintf("No page matches the path %q. It may have been moved "+
+			"or never existed.", r.URL.Path),
+		Path: r.URL.Path,
+	}
+	t, ok := s.templates["error.tmpl"]
+	if !ok {
+		fmt.Fprintf(w, "404 Not Found: %s", data.Msg)
+		return
+	}
+	if err := t.ExecuteTemplate(w, "error.tmpl", data); err != nil {
+		s.log.Error("404 template", "err", err, "path", r.URL.Path)
+		fmt.Fprintf(w, "404 Not Found: %s", data.Msg)
+	}
+}
 
 func (s *Server) handleHomepage(w http.ResponseWriter, r *http.Request) {
 	data := struct {
