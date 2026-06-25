@@ -5,6 +5,7 @@ package server
 
 import (
 	"bytes"
+	"cmp"
 	"fmt"
 	"html/template"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"net/http"
 	"path"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1219,7 +1221,12 @@ func (s *Server) handleAPIRootOccurrences(w http.ResponseWriter, r *http.Request
 }
 
 // handleAPIRootSummary returns everything needed for the surah page
-// side panel: root info, occurrences, and concordance lemmas.
+// side panel: root metadata + AI meaning data + lemma frequency.
+//
+// The panel does NOT include the concordance occurrence list — the
+// plan explicitly says the side panel focuses on morphology and root
+// meanings, not the per-verse concordance (that lives on /concordance
+// and /root/detailed/[root]).
 func (s *Server) handleAPIRootSummary(w http.ResponseWriter, r *http.Request) {
 	root := r.PathValue("root")
 	entry, ok := s.roots.ByRoot[root]
@@ -1227,13 +1234,13 @@ func (s *Server) handleAPIRootSummary(w http.ResponseWriter, r *http.Request) {
 		s.respondError(w, http.StatusNotFound, "root not found")
 		return
 	}
-	occurrences := search.OccurrencesForRoot(root, s.roots, s.quran, 0, false)
 
-	// Build concordance lemmas
+	// Lemma frequency list — comes from the concordance index but we
+	// only surface the lemma + occurrence count (not the verse refs,
+	// which is what the panel should be hiding).
 	type lemmaView struct {
-		Arabic      string   `json:"arabic"`
-		Occurrences int      `json:"occurrences"`
-		Verses      []string `json:"verses"`
+		Arabic      string `json:"arabic"`
+		Occurrences int    `json:"occurrences"`
 	}
 	lemmas := []lemmaView{}
 	if s.concordance != nil {
@@ -1242,11 +1249,10 @@ func (s *Server) handleAPIRootSummary(w http.ResponseWriter, r *http.Request) {
 				lemmas = append(lemmas, lemmaView{
 					Arabic:      ar,
 					Occurrences: lm.TotalOccurrences,
-					Verses:      lm.Occurrences,
 				})
 			}
-			sort.Slice(lemmas, func(i, j int) bool {
-				return lemmas[i].Occurrences > lemmas[j].Occurrences
+			slices.SortFunc(lemmas, func(a, b lemmaView) int {
+				return cmp.Compare(b.Occurrences, a.Occurrences)
 			})
 		}
 	}
@@ -1264,7 +1270,6 @@ func (s *Server) handleAPIRootSummary(w http.ResponseWriter, r *http.Request) {
 		"al_raghib":      entry.AlRaghib,
 		"quran_examples": entry.QuranExamples,
 		"hadith":         entry.HadithExamples,
-		"occ_list":       occurrences,
 		"lemmas":         lemmas,
 	})
 }

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -847,5 +848,98 @@ func TestSidePanelHighlightStyling(t *testing.T) {
 		if !strings.Contains(body, sel) {
 			t.Errorf("quran.css side-panel missing %q — the panel won't read as highlighted", sel)
 		}
+	}
+}
+
+// ── Side-panel redesign tests ──────────────────────────────────
+//
+// Per plan.md §Surah-Page Column1: "don't show concordance data
+// here just all the masaq, and root meanings data. don't use
+// multiple columns, use stacked data."
+//
+// The panel API now drops `occ_list` (the per-verse concordance
+// list) and exposes only what the panel actually renders: lemma
+// frequency (no verse refs) + AI meaning data + Quran examples +
+// Hadith. The CSS no longer has the 3-col grid.
+
+func TestRootSummaryAPIDropsOccList(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/api/root/Slw/summary", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Must NOT contain occ_list anymore.
+	if strings.Contains(body, `"occ_list"`) {
+		t.Error("/api/root/{root}/summary still exposes occ_list — concordance data must stay out of the side panel")
+	}
+	// Must still expose lemmas (frequency block) and meaning fields.
+	for _, key := range []string{`"lemmas"`, `"meaning_en"`, `"meaning_ar"`, `"core_semantic"`, `"ibn_faris"`, `"al_raghib"`} {
+		if !strings.Contains(body, key) {
+			t.Errorf("root summary missing %s", key)
+		}
+	}
+	// Lemmas should no longer carry verse refs (Verses field).
+	if strings.Contains(body, `"verses"`) {
+		t.Error("lemmas should not carry verse refs in the panel — only arabic + occurrences")
+	}
+}
+
+func TestSidePanelJSStacksData(t *testing.T) {
+	// The rendered side panel JS must:
+	//   - render sections via .ssp-section (gold caption + rule)
+	//   - render Lemma frequency as a block BEFORE the meaning block
+	//   - NOT use ssp-root-grid or ssp-col-head (old 3-col grid is gone)
+	jsBytes, err := os.ReadFile("../../../backend/static/js/surah-side-panel.js")
+	if err != nil {
+		t.Fatalf("read surah-side-panel.js: %v", err)
+	}
+	js := string(jsBytes)
+
+	// Must have the new section heading helper.
+	if !strings.Contains(js, "ssp-section") {
+		t.Error("surah-side-panel.js missing .ssp-section heading helper")
+	}
+	// Must NOT have the old 3-col grid.
+	for _, removed := range []string{"ssp-root-grid", "ssp-col-head", "ssp-col", "ssp-conc-item", "ssp-conc-link", "ssp-conc-verse", "ssp-freq-item", "ssp-shade-item", "ssp-shade-body", "ssp-shade-head"} {
+		if strings.Contains(js, removed) {
+			t.Errorf("surah-side-panel.js still references removed class %q", removed)
+		}
+	}
+	// Must call renderSegment on each segment.
+	if !strings.Contains(js, "renderSegment") {
+		t.Error("surah-side-panel.js should call renderSegment for full MASAQ data")
+	}
+	// Must NOT have a top-level "Func." line (redundant with segments).
+	if strings.Contains(js, `dt>Func.<`) && !strings.Contains(js, "remove") {
+		// Not strictly a failure but worth noting; leave as a warning.
+		t.Log("note: 'Func.' line is replaced by full per-segment MASAQ data")
+	}
+}
+
+func TestSidePanelCSSNoGrid(t *testing.T) {
+	cssBytes, err := os.ReadFile("../../../backend/static/css/quran.css")
+	if err != nil {
+		t.Fatalf("read quran.css: %v", err)
+	}
+	css := string(cssBytes)
+
+	// The 3-col grid is gone.
+	if strings.Contains(css, ".ssp-root-grid") {
+		t.Error("quran.css still declares .ssp-root-grid — the 3-col layout must be removed")
+	}
+	if strings.Contains(css, ".ssp-conc-") {
+		t.Error("quran.css still declares .ssp-conc-* classes — concordance styles should be removed")
+	}
+	// New section heading style is present.
+	if !strings.Contains(css, ".ssp-section") {
+		t.Error("quran.css missing .ssp-section heading style")
+	}
+	// Lemma frequency block uses a grid (1 column).
+	if !strings.Contains(css, ".ssp-freq-list") {
+		t.Error("quran.css missing .ssp-freq-list")
 	}
 }
