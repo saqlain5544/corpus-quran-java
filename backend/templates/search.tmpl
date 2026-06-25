@@ -22,7 +22,17 @@
     {{end}}
   </ol>
   {{else if .Query}}
-  <p class="search-empty surface">No matches.</p>
+  <section class="search-empty surface">
+    <h2>No matches for &ldquo;{{.Query}}&rdquo;</h2>
+    <p>Try one of these instead:</p>
+    <nav class="search-empty-actions" aria-label="Alternative searches">
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=arabic">Arabic: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=root">Root: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=translation">Translation: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/roots">Browse all roots</a>
+      <a class="search-empty-action" href="/concordance">View concordance</a>
+    </nav>
+  </section>
   {{end}}
 </div>
 {{end}}

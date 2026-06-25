@@ -140,7 +140,26 @@
 .gh-recent-clear:hover { color: var(--ink); background: var(--word-hover-bg); }
 
 .gh-nav { display: flex; gap: var(--sp-3); align-items: center; }
-.gh-nav a { color: var(--ink); }
+.gh-nav a {
+  color: var(--ink);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+}
+.gh-nav a:hover { color: var(--accent); }
+/* Active nav state — set body[data-page] in layout.tmpl. The
+   gold underline + accent color matches the bookmarks button's
+   "pressed" state for visual consistency. */
+body[data-page="Roots"] .gh-nav a[href="/roots"],
+body[data-page="root-detail"] .gh-nav a[href="/roots"],
+body[data-page="Concordance"] .gh-nav a[href="/concordance"],
+body[data-page="About"] .gh-nav a[href="/about"] {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
 .gh-theme,
 .gh-bookmarks {
   background: none;
@@ -449,18 +468,24 @@
  * tech. tabular-nums keeps the digit columns aligned so the
  * layout doesn't jitter as the user drags. */
 .sh-control .sh-value {
+  /* Read-only value badge — visually distinct from inputs so users
+     don't try to click into it. Filled background with a subtle
+     pill shape and tabular numbers so digits don't jitter as the
+     user drags the slider. */
   font-family: var(--font-mono);
   font-size: var(--fs-xs);
   font-variant-numeric: tabular-nums;
-  color: var(--ink);
+  font-weight: 600;
+  color: var(--ink-muted);
   min-width: 3.2em;
-  text-align: right;
+  text-align: center;
   user-select: none;
-  background: var(--bg-elev);
-  border: var(--border-w) solid var(--rule);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg-sunken);
+  border: 0;
+  border-radius: 999px;
+  padding: 2px var(--sp-2);
   line-height: 1.4;
+  cursor: default;
 }
 .sh-control .sh-value-unit {
   color: var(--ink-soft);
