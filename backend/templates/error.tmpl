@@ -1,0 +1,8 @@
+{{define "error.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="error-page">
+  <h1>{{.Status}}</h1>
+  <p>{{.Msg}}</p>
+  <p><a href="/">← Back to home</a></p>
+</div>
+{{end}}

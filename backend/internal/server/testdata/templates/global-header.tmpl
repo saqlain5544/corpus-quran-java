@@ -1,0 +1,21 @@
+{{define "global-header"}}<header class="global-header" role="banner">
+  <div class="gh-inner">
+    <a class="gh-brand" href="/">Quran Reader</a>
+    <form class="gh-search" role="search" data-component="global-search" method="get" action="/search">
+      <input type="search" name="q" placeholder="Search…" aria-label="Search" autocomplete="off">
+      <select name="type" aria-label="Search type">
+        <option value="english" selected>english</option>
+        <option value="translation">translation</option>
+        <option value="arabic">arabic</option>
+        <option value="root">root</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+    <nav class="gh-nav" aria-label="Primary">
+      <a href="/roots">Roots</a>
+      <a href="/concordance">Concordance</a>
+      <a href="/about">About</a>
+      <button class="gh-theme" data-component="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
+    </nav>
+  </div>
+</header>{{end}}

@@ -1,0 +1,146 @@
+{{define "root-detail.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-root-detail">
+  <header class="root-detail-header">
+    <h1>
+      <span class="rdh-arabic" lang="ar" dir="rtl">{{.Entry.Arabic}}</span>
+      <small class="rdh-buckwalter">({{.Root}})</small>
+      <span class="rdh-count">{{.Entry.Occurrences}} occurrences</span>
+    </h1>
+    <p class="rdh-pos">{{.Entry.POS}}</p>
+  </header>
+
+  <div class="root-detail-grid">
+    <!-- Column 1: Root meaning + all root-related data -->
+    <div class="rd-col-meaning">
+      <section class="rd-meaning" aria-label="Meaning">
+        <h2>Meaning</h2>
+        {{if .Entry.MeaningEN}}<p class="meaning-en">{{.Entry.MeaningEN}}</p>{{end}}
+        {{if .Entry.MeaningAR}}<p class="meaning-ar" lang="ar" dir="rtl">{{.Entry.MeaningAR}}</p>{{end}}
+        {{if .Entry.Letters}}<p class="meaning-letters" lang="ar" dir="rtl">Letters: {{.Entry.Letters}}</p>{{end}}
+        {{if .Entry.CoreSemantic}}<p class="meaning-core"><strong>Core semantic field:</strong> {{.Entry.CoreSemantic}}</p>{{end}}
+      </section>
+
+      {{if or .Entry.IbnFaris .Entry.AlRaghib}}
+      <section class="rd-lexical" aria-label="Lexical analysis">
+        <h2>Classical Lexicons</h2>
+        {{if .Entry.IbnFaris}}<p class="lex-ref"><strong>Ibn Fāris:</strong> {{.Entry.IbnFaris}}</p>{{end}}
+        {{if .Entry.AlRaghib}}<p class="lex-ref"><strong>Al-Rāghib:</strong> {{.Entry.AlRaghib}}</p>{{end}}
+      </section>
+      {{end}}
+
+      {{if .Entry.QuranExamples}}
+      <section class="rd-examples" aria-label="Quranic examples">
+        <h2>Quranic Examples</h2>
+        {{range .Entry.QuranExamples}}
+        <div class="rd-example">
+          <a class="rd-ex-ref" href="/surah/{{index (splitn .Ref ":" 2) 0}}#verse-{{index (splitn .Ref ":" 2) 1}}">{{.Ref}}</a>
+          <p class="rd-ex-arabic" lang="ar" dir="rtl">{{.Arabic}}</p>
+          <p class="rd-ex-english">{{.English}}</p>
+          {{if .Context}}<p class="rd-ex-context">{{.Context}}</p>{{end}}
+        </div>
+        {{end}}
+      </section>
+      {{end}}
+
+      {{if .Entry.HadithExamples}}
+      <section class="rd-hadith" aria-label="Hadith references">
+        <h2>Hadith References</h2>
+        {{range .Entry.HadithExamples}}
+        <div class="rd-hadith-item">
+          <p class="rd-hadith-arabic" lang="ar" dir="rtl">{{.Arabic}}</p>
+          <p class="rd-hadith-english">{{.English}}</p>
+          <p class="rd-hadith-source">{{.Source}}</p>
+        </div>
+        {{end}}
+      </section>
+      {{end}}
+
+      {{if .SurahDistribution}}
+      <section class="rd-distribution" aria-label="Surah distribution">
+        <h2>Distribution by Surah</h2>
+        <p class="rd-dist-summary">{{len .SurahDistribution}} surahs contain this root.</p>
+        <ol class="rd-dist-list">
+          {{range .SurahDistribution}}
+          <li class="rd-dist-row">
+            <a class="rd-dist-link" href="/root/detailed/{{$.Root}}?surah={{.Number}}">{{.Number}}. {{.Name}}</a>
+            <span class="rd-dist-count">{{.Count}}×</span>
+          </li>
+          {{end}}
+        </ol>
+      </section>
+      {{end}}
+
+      <section class="rd-occurrences" aria-label="Occurrences">
+        <div class="roots-controls">
+          <form method="get" action="/root/detailed/{{.Root}}">
+            <label>Surah:
+              <select name="surah" onchange="this.form.submit()">
+                <option value="">All</option>
+                {{range .SurahOpts}}
+                <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
+                {{end}}
+              </select>
+            </label>
+            <label>Sort:
+              <select name="sort" onchange="this.form.submit()">
+                <option value="desc" {{if not .Asc}}selected{{end}}>Surah order</option>
+                <option value="asc" {{if .Asc}}selected{{end}}>Ascending</option>
+              </select>
+            </label>
+          </form>
+        </div>
+        <p class="rd-occ-summary">{{len .Occurrences}} occurrence{{if ne (len .Occurrences) 1}}s{{end}}{{if .FilterSurah}} in surah {{.FilterSurah}}{{else}} across the Quran{{end}}.</p>
+        <ol class="rd-occ-list">
+          {{range .Occurrences}}
+          <li class="rd-occ-row">
+            <a class="rd-occ-link" href="{{.Link}}">{{.Title}}</a>
+            {{if .Snippet}}<span class="rd-occ-word" lang="ar" dir="rtl">{{.Snippet}}</span>{{end}}
+            {{if .VerseText}}<p class="rd-occ-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
+          </li>
+          {{end}}
+        </ol>
+        {{if .Entry.Locations}}
+        <details class="rd-locations">
+          <summary>All <code>s:v:w</code> locations ({{len .Entry.Locations}})</summary>
+          <ol class="rd-loc-list">
+            {{range .Entry.Locations}}
+            {{$parts := splitn . ":" 3}}
+            <li><a href="/surah/{{index $parts 0}}#verse-{{index $parts 1}}">{{.}}</a></li>
+            {{end}}
+          </ol>
+        </details>
+        {{end}}
+      </section>
+
+      {{if .ConLemmas}}
+      <section class="rd-concordance" aria-label="Concordance lemmas">
+        <h2>Concordance — Lemmas</h2>
+        {{range .ConLemmas}}
+        <section class="rd-lemma">
+          <h3 class="rd-lemma-head">
+            <span class="rd-lemma-arabic" lang="ar" dir="rtl">{{.Arabic}}</span>
+            <span class="rd-lemma-count">{{.Occurrences}}×</span>
+          </h3>
+          <ol class="rd-lemma-occ">
+            {{range .Verses}}
+            <li class="rd-lo-row">
+              <a class="rd-lo-link" href="{{.Link}}">{{.Ref}}</a>
+              {{if .VerseText}}<p class="rd-lo-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
+              {{if .Translation}}<p class="rd-lo-trans">{{.Translation}}</p>{{end}}
+            </li>
+            {{end}}
+          </ol>
+        </section>
+        {{end}}
+      </section>
+      {{end}}
+
+      <p class="data-attribution">
+        Meaning data: AI-generated, from <code>meanings-roots-ai.jsonl</code>.
+        Always cross-reference classical tafsir for definitive interpretation.
+      </p>
+    </div>
+  </div>
+</div>
+{{end}}

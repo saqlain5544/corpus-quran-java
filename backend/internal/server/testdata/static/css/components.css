@@ -1,0 +1,461 @@
+/* components.css — global header (full viewport width),
+ * surah header (constrained to match the surah body width),
+ * tooltip, modal.
+ */
+
+/* ── Global header (100vw, sticky to top) ───────────────────── */
+/* The header element itself fills the viewport; its inner content
+ * (brand + search + nav) is centered and capped at the page max-width
+ * for visual rhythm. The background spans the full width so the
+ * sticky surface looks uninterrupted. */
+.global-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100vw;
+  z-index: var(--z-sticky);
+  background: var(--bg-elev);
+  border-bottom: var(--border-w) solid var(--rule);
+  backdrop-filter: saturate(180%) blur(8px);
+}
+.gh-inner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-4);
+  max-width: var(--grid-max);
+  margin: 0 auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+.gh-brand {
+  font: 600 var(--fs-lg)/1 var(--font-latin);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+}
+.gh-search { display: flex; gap: var(--sp-2); min-width: 0; }
+.gh-search input,
+.gh-search select,
+.gh-search button {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg);
+  color: var(--ink);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+.gh-search input { flex: 1; min-width: 6rem; }
+.gh-search button {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+.gh-search button:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+.gh-nav { display: flex; gap: var(--sp-3); align-items: center; }
+.gh-nav a { color: var(--ink); }
+.gh-theme {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.gh-theme:hover { background: var(--bg-sunken); }
+
+@media (max-width: 720px) {
+  .gh-inner { grid-template-columns: 1fr auto; gap: var(--sp-2); }
+  .gh-brand { grid-column: 1; }
+  .gh-search { grid-column: 1 / -1; }
+  .gh-nav { grid-column: 2; grid-row: 1; }
+}
+
+/* ── Surah header ──────────────────────────────────────────── */
+/* Lives inside .page-surah so it inherits the same grid-column
+ * (3 / span 8) as the Quran article — no extra width rules needed.
+ * Sticky just below the global header. */
+.surah-header {
+  position: sticky;
+  top: 56px;
+  z-index: calc(var(--z-sticky) - 1);
+  background: var(--bg);
+  border-bottom: var(--border-w) solid var(--rule);
+  padding: var(--sp-3) 0;
+}
+.sh-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: var(--sp-4);
+  align-items: center;
+}
+.surah-title {
+  margin: 0;
+  font: 600 var(--fs-xl)/1 var(--font-latin);
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+}
+.surah-title-num { color: var(--accent); font: 600 var(--fs-md)/1 var(--font-latin); }
+.surah-title-name { font: 600 var(--fs-xl)/1 var(--font-arabic); }
+.sh-search input {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-size: var(--fs-sm);  /* 14px — smaller than the body 16px so the
+                                secondary search field doesn't compete
+                                with the surah title */
+  max-height: 60px;          /* cap the input height so it never
+                                overwhelms the rest of the header on
+                                narrow viewports */
+}
+.sh-search input.is-error { border-color: var(--error); }
+.sh-controls { display: flex; gap: var(--sp-4); align-items: center; }
+.sh-control {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.sh-control .sh-label {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+}
+
+/* ── Custom range slider ──────────────────────────────────────── */
+/* Native range inputs look ugly in every browser. We strip the
+ * default appearance, then style the track and thumb ourselves for
+ * both WebKit (Chrome/Safari) and Firefox. The filled portion of
+ * the track is driven by the --fill custom property set by JS on
+ * every input event. */
+.sh-control input[type="range"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 6rem;
+  height: 18px;       /* taller than the track itself for an easier click target */
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+  margin: 0;
+}
+/* Track — WebKit */
+.sh-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0% var(--fill, 0%),
+    var(--rule)    var(--fill, 0%) 100%
+  );
+}
+/* Thumb — WebKit */
+.sh-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;  /* center on the 3px track */
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.sh-control input[type="range"]:hover::-webkit-slider-thumb,
+.sh-control input[type="range"]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px rgba(138, 90, 43, 0.20);
+}
+.sh-control input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+/* Track — Firefox (uses ::-moz-range-progress for the filled portion) */
+.sh-control input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--rule);
+}
+.sh-control input[type="range"]::-moz-range-progress {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--accent);
+}
+/* Thumb — Firefox */
+.sh-control input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.sh-control input[type="range"]:hover::-moz-range-thumb,
+.sh-control input[type="range"]:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 4px rgba(138, 90, 43, 0.20);
+}
+.sh-control input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* ── Live value display next to each slider ──────────────────── */
+/* Uses <output> which is associated with the input via the `for`
+ * attribute; `aria-live="polite"` announces changes to assistive
+ * tech. tabular-nums keeps the digit columns aligned so the
+ * layout doesn't jitter as the user drags. */
+.sh-control .sh-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  min-width: 3.2em;
+  text-align: right;
+  user-select: none;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-2);
+  line-height: 1.4;
+}
+.sh-control .sh-value-unit {
+  color: var(--ink-soft);
+  margin-left: 0.15em;
+}
+
+.sh-nav { display: flex; gap: var(--sp-2); }
+.sh-prev, .sh-next { color: var(--ink); font: 600 var(--fs-sm)/1 var(--font-latin); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); }
+.sh-prev.disabled, .sh-next.disabled { color: var(--ink-soft); pointer-events: none; }
+
+@media (max-width: 768px) {
+  .sh-row { grid-template-columns: 1fr; gap: var(--sp-2); }
+  .sh-controls { flex-wrap: wrap; }
+}
+
+/* ── Word tooltip ──────────────────────────────────────────── */
+/* Layout (top → bottom):
+ *   1. Word          (large Arabic, with tashkeel)
+ *   2. Root          (Arabic letters with spaces between)
+ *   3. Lemma         (bare stem, no diacritics)
+ *   4. Gloss         (combined English gloss)
+ *   5. POS · Function (small caps, bottom)
+ */
+.word-tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  background: var(--tooltip-bg);
+  color: var(--ink);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+  min-width: 12rem;
+  max-width: 26rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.word-tooltip[data-state="visible"] { opacity: 1; }
+.word-tooltip[hidden] { display: none; }
+
+.word-tooltip .wt-loading { color: var(--ink-muted); margin: 0; font-style: italic; }
+.word-tooltip .wt-empty { color: var(--ink-soft); margin: 0; font-style: italic; }
+
+/* 1. Word — large, Arabic, centered */
+.word-tooltip .wt-word {
+  font: 700 var(--fs-lg)/1.2 var(--font-arabic);
+  margin: 0 0 var(--sp-3);
+  padding: 0 0 var(--sp-2);
+  border-bottom: var(--border-w) solid var(--rule);
+  text-align: center;
+  color: var(--ink);
+}
+
+/* 2–4. Root / Lemma / Gloss — label : value list */
+.word-tooltip .wt-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+  margin: 0 0 var(--sp-2);
+}
+.word-tooltip .wt-fields dt {
+  color: var(--ink-muted);
+  font-weight: 500;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  align-self: baseline;
+}
+.word-tooltip .wt-fields dd { margin: 0; }
+
+/* 2. Root — Arabic letters with a space between each */
+.word-tooltip .wt-root {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  word-spacing: 0.5em;
+}
+
+/* 3. Lemma — bare stem, no diacritics */
+.word-tooltip .wt-lemma {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--ink);
+}
+
+/* 4. Gloss — English */
+.word-tooltip .wt-gloss { color: var(--ink); }
+
+/* 5. POS · Function — small caps at the bottom */
+.word-tooltip .wt-meta {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding-top: var(--sp-2);
+  border-top: var(--border-w) solid var(--rule);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.word-tooltip .wt-pos {
+  font-weight: 700;
+  color: var(--accent);
+}
+.word-tooltip .wt-fn { color: var(--ink-muted); }
+.word-tooltip .wt-sep { color: var(--ink-soft); }
+
+/* ── Modal ─────────────────────────────────────────────────── */
+.word-modal {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  max-width: var(--measure-base);
+  width: 92vw;
+  color: inherit;
+}
+.word-modal::backdrop {
+  background: var(--modal-backdrop);
+  z-index: var(--z-modal);
+}
+.modal-shell {
+  background: var(--bg-elev);
+  color: var(--ink);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+  box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+  display: grid;
+  gap: var(--sp-4);
+  max-height: 85vh;
+  overflow: auto;
+}
+.modal-header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-4); }
+.modal-title { margin: 0; font: 600 var(--fs-lg)/1.2 var(--font-latin); }
+.modal-close {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: var(--fs-2xl);
+  line-height: 1;
+  padding: 0 var(--sp-2);
+}
+.modal-close:hover { color: var(--ink); }
+.modal-loading { color: var(--ink-muted); font-style: italic; }
+
+.modal-word-text {
+  font: 700 var(--fs-2xl)/1.4 var(--font-arabic);
+  text-align: center;
+  margin: 0 0 var(--sp-3);
+  padding: 0 0 var(--sp-3);
+  border-bottom: var(--border-w) solid var(--rule);
+  color: var(--ink);
+  direction: rtl;
+}
+
+/* Root / Lemma / Gloss — label : value list */
+.modal-shell .m-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+  margin: 0 0 var(--sp-3);
+}
+.modal-shell .m-fields dt {
+  color: var(--ink-muted);
+  font-weight: 500;
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  align-self: baseline;
+}
+.modal-shell .m-fields dd { margin: 0; }
+.modal-shell .m-root {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--accent);
+  word-spacing: 0.5em;
+  letter-spacing: 0.05em;
+}
+.modal-shell .m-lemma {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--ink);
+}
+.modal-shell .m-gloss { color: var(--ink); }
+
+/* POS · Function — small caps, bottom */
+.modal-shell .m-meta {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  flex-wrap: wrap;
+  padding-top: var(--sp-2);
+  margin-bottom: var(--sp-3);
+  border-top: var(--border-w) solid var(--rule);
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.modal-shell .m-pos { font-weight: 700; color: var(--accent); }
+.modal-shell .m-fn { color: var(--ink-muted); }
+.modal-shell .m-sep { color: var(--ink-soft); }
+
+.modal-root {
+  padding: var(--sp-3);
+  background: var(--bg-sunken);
+  border-radius: var(--radius-md);
+}
+.modal-root .m-root-line {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-2);
+}
+.modal-root .mr-arabic { font: 700 var(--fs-lg)/1 var(--font-arabic); direction: rtl; }
+.modal-root .mr-buckwalter { font-family: var(--font-mono); color: var(--ink-muted); }
+.modal-root .mr-pos {
+  font-size: var(--fs-xs);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+.modal-root .mr-meaning { margin: var(--sp-2) 0; color: var(--ink); }
+.modal-root .mr-link { color: var(--accent); }
+.modal-no-root, .modal-no-data {
+  color: var(--ink-soft);
+  font-style: italic;
+  margin: 0;
+}

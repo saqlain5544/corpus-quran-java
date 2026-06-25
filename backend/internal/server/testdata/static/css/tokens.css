@@ -1,0 +1,157 @@
+/* tokens.css — design tokens, themes, typography, spacing.
+ * No component selectors here — keep it pure CSS variables.
+ */
+
+:root {
+  /* Typography */
+  --font-arabic: "Hafs", "Amiri Quran", "Amiri", "Scheherazade New", "Noto Naskh Arabic", serif;
+  --font-latin:  "Iowan Old Style", "Charter", "Georgia", serif;
+  --font-mono:   ui-monospace, "SF Mono", "Menlo", monospace;
+
+  --fs-base:     16px;
+  --fs-scale:    1.25;
+  --lh-base:     1.6;
+
+  --fs-xs:   calc(var(--fs-base) * 0.75);
+  --fs-sm:   calc(var(--fs-base) * 0.875);
+  --fs-md:   var(--fs-base);
+  --fs-lg:   calc(var(--fs-base) * var(--fs-scale));
+  --fs-xl:   calc(var(--fs-lg)  * var(--fs-scale));
+  --fs-2xl:  calc(var(--fs-xl)  * var(--fs-scale));
+  --fs-3xl:  calc(var(--fs-2xl) * var(--fs-scale));
+
+  /* Quran body sizes — overridable on .page-surah */
+  --fs-quran: 22px;
+  --lh-quran: 2;
+
+  /* Spacing (4px base) */
+  --sp-1:  0.25rem;
+  --sp-2:  0.5rem;
+  --sp-3:  0.75rem;
+  --sp-4:  1rem;
+  --sp-6:  1.5rem;
+  --sp-8:  2rem;
+  --sp-12: 3rem;
+  --sp-16: 4rem;
+
+  /* Layout */
+  --measure-narrow: 32rem;
+  --measure-base:   42rem;
+  --measure-wide:   60rem;
+  --measure-quran:  48rem;
+
+  --grid-cols: 12;
+  --grid-gap:  var(--sp-4);
+  --grid-max:  80rem;
+
+  /* Z-index */
+  --z-base:    1;
+  --z-sticky:  100;
+  --z-tooltip: 200;
+  --z-modal:   300;
+
+  /* Motion */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 320ms;
+
+  /* Borders */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --border-w:  1px;
+}
+
+/* Light theme — paper-and-ink */
+:root, [data-theme="light"] {
+  --bg:             #faf8f4;
+  --bg-elev:        #ffffff;
+  --bg-sunken:      #f0ebe1;
+  --ink:            #1a1612;
+  --ink-muted:      #5c544a;
+  --ink-soft:       #8a8278;
+  --rule:           #d8d2c5;
+  --accent:         #8a5a2b;
+  --accent-soft:    #c9a36b;
+  --error:          #a93226;
+  --success:        #2d6a4f;
+  --mark-quran-rub: #8a5a2b;
+  --mark-sajdah:    #2d6a4f;
+  --mark-pause:     #8a8278;
+  --word-hover-bg:  rgba(138, 90, 43, 0.08);
+  --tooltip-bg:     #ffffff;
+  --modal-backdrop: rgba(26, 22, 18, 0.4);
+}
+
+/* Dark theme — night reading */
+[data-theme="dark"] {
+  --bg:             #14110d;
+  --bg-elev:        #1e1a14;
+  --bg-sunken:      #0f0d09;
+  --ink:            #ece5d6;
+  --ink-muted:      #a89e8b;
+  --ink-soft:       #6b6358;
+  --rule:           #2a2520;
+  --accent:         #d4a86a;
+  --accent-soft:    #8a5a2b;
+  --error:          #d97a6c;
+  --success:        #7fbf9e;
+  --mark-quran-rub: #d4a86a;
+  --mark-sajdah:    #7fbf9e;
+  --mark-pause:     #6b6358;
+  --word-hover-bg:  rgba(212, 168, 106, 0.10);
+  --tooltip-bg:     #1e1a14;
+  --modal-backdrop: rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg:             #14110d;
+    --bg-elev:        #1e1a14;
+    --bg-sunken:      #0f0d09;
+    --ink:            #ece5d6;
+    --ink-muted:      #a89e8b;
+    --ink-soft:       #6b6358;
+    --rule:           #2a2520;
+    --accent:         #d4a86a;
+    --accent-soft:    #8a5a2b;
+    --error:          #d97a6c;
+    --success:        #7fbf9e;
+    --mark-quran-rub: #d4a86a;
+    --mark-sajdah:    #7fbf9e;
+    --mark-pause:     #6b6358;
+    --word-hover-bg:  rgba(212, 168, 106, 0.10);
+    --tooltip-bg:     #1e1a14;
+    --modal-backdrop: rgba(0, 0, 0, 0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+@font-face {
+  font-family: "Hafs";
+  src: url("/fonts/hafs.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
+}
+
+/* Reserve scrollbar space so toggling overflow:hidden (when the
+ * modal opens) doesn't shift the layout horizontally. The
+ * .modal-open class on <html> freezes page scrolling while a
+ * <dialog> is open without disrupting the visible chrome. */
+html {
+  scrollbar-gutter: stable;
+}
+html.modal-open {
+  overflow: hidden;
+}
+body.modal-open {
+  overflow: hidden;
+}
+

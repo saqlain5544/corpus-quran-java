@@ -1,0 +1,46 @@
+{{define "concordance.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-concordance">
+  <header class="concordance-header">
+    <h1>Concordance</h1>
+    <p class="concordance-subtitle">{{.Total}} roots with {{.Roots|len}} shown on this page.</p>
+  </header>
+
+  <ol class="concordance-list">
+    {{range .Roots}}
+      <li class="concordance-root">
+        <h2 class="cr-buckwalter">
+          <a href="/root/detailed/{{.Buckwalter}}">{{.Buckwalter}}</a>
+          <small>{{.Occurrences}} occurrences</small>
+        </h2>
+        <ul class="cr-lemmas">
+          {{range .Lemmas}}
+          <li class="cr-lemma">
+            <span class="crl-arabic" lang="ar" dir="rtl">{{.Arabic}}</span>
+            <span class="crl-count">{{.Occurrences}}×</span>
+            {{$verses := .Verses}}
+            <details class="crl-verses">
+              <summary>
+                {{if gt (len $verses) 0}}{{index $verses 0}}{{end}}
+                {{if gt (len $verses) 1}} <span class="crl-more">+ {{sub (len $verses) 1}} more</span>{{end}}
+              </summary>
+              <ol class="crl-verse-list">
+                {{range $verses}}
+                <li><a href="/surah/{{index (splitn . ":" 2) 0}}#verse-{{index (splitn . ":" 2) 1}}">{{.}}</a></li>
+                {{end}}
+              </ol>
+            </details>
+          </li>
+          {{end}}
+        </ul>
+      </li>
+    {{end}}
+  </ol>
+
+  <nav class="pagination" aria-label="Pagination">
+    {{if .HasPrev}}<a class="page-prev" href="/concordance?page={{dec .Page}}">← Prev</a>{{end}}
+    <span class="page-info">Page {{.Page}}</span>
+    {{if .HasNext}}<a class="page-next" href="/concordance?page={{inc .Page}}">Next →</a>{{end}}
+  </nav>
+</div>
+{{end}}

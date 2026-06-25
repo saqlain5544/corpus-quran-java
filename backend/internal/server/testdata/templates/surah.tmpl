@@ -1,0 +1,95 @@
+{{define "surah.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-surah" data-surah="{{.Surah.Number}}">
+  <!-- Column 1: Fixed root-detail side panel -->
+  <aside class="surah-side-panel" id="surah-side-panel" data-component="surah-side-panel">
+    <div class="ssp-inner" id="ssp-content">
+      <p class="ssp-empty">Click a word to see root details.</p>
+    </div>
+  </aside>
+
+  <!-- Column 2: Main content (11 of 12 grid columns) -->
+  <div class="surah-main">
+  <header class="surah-header" data-sticky="below-global">
+    <div class="sh-row sh-nav-row">
+      <div class="sh-nav-left">
+        {{if .Prev}}<a class="sh-prev" href="/surah/{{.Prev.Number}}" rel="prev">← {{.Prev.Number}}</a>{{else}}<span class="sh-prev disabled">←</span>{{end}}
+      </div>
+      <h1 class="surah-title">
+        <span class="surah-title-num">{{.Surah.Number}}</span>
+        <span class="surah-title-name">{{.Surah.Name}}</span>
+      </h1>
+      <div class="sh-nav-right">
+        {{if .Next}}<a class="sh-next" href="/surah/{{.Next.Number}}" rel="next">{{.Next.Number}} →</a>{{else}}<span class="sh-next disabled">→</span>{{end}}
+      </div>
+    </div>
+    <div class="sh-row sh-ctrl-row">
+      <form class="sh-search" data-component="surah-local-search" role="search">
+        <input type="search" placeholder="Search in surah…" aria-label="Search in surah" />
+      </form>
+      <div class="sh-control">
+        <label for="font-size-input" class="sh-label">Font</label>
+        <input id="font-size-input" type="range" min="10" max="40" step="1" value="22" data-component="font-size">
+        <output class="sh-value" for="font-size-input" id="font-size-value" aria-live="polite">22 px</output>
+      </div>
+      <div class="sh-control">
+        <label for="line-height-input" class="sh-label">Line</label>
+        <input id="line-height-input" type="range" min="1" max="3" step="0.1" value="2" data-component="line-height">
+        <output class="sh-value" for="line-height-input" id="line-height-value" aria-live="polite">2.0</output>
+      </div>
+      {{if .TransOptions}}
+      <div class="sh-control">
+        <label for="trans-select" class="sh-label">Trans.</label>
+        <select id="trans-select" data-component="translation-select" aria-label="Translation">
+          <option value="-1">None</option>
+          {{range .TransOptions}}
+          <option value="{{.Idx}}" {{if eq $.TransIdx .Idx}}selected{{end}} dir="{{.Dir}}">{{.Label}}</option>
+          {{end}}
+        </select>
+      </div>
+      {{end}}
+    </div>
+  </header>
+
+  {{if .Surah.Bismillah}}
+  <p class="bismillah" lang="ar" dir="rtl">{{.Surah.Bismillah}}</p>
+  {{end}}
+
+  <article class="quran" lang="ar" dir="rtl">
+    {{range $i, $ae := .AyahEntries}}
+      {{$an := $ae.Ayah.Number}}
+      <section class="ayah" id="verse-{{$an}}" data-ayah="{{$an}}">
+        <p class="ayah-text" lang="ar" dir="rtl">
+          {{- range $t := $ae.Ayah.Tokens -}}
+            {{- if eq $t.Kind "word" -}}
+              <button type="button" class="word"
+                data-surah="{{$.Surah.Number}}"
+                data-ayah="{{$an}}"
+                data-word="{{$t.WordNo}}"
+                data-root="{{index $ae.WordRoots $t.WordNo}}"
+                data-component="word"
+                aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
+            {{- else -}}
+              <span class="mark" data-char="{{$t.Value}}">{{$t.Value}}</span>
+            {{- end -}}
+          {{- end -}}
+          <span class="ayah-number" lang="ar" dir="rtl">{{$an}}</span>
+        </p>
+        <!-- All translations pre-rendered, toggled by JS -->
+        {{if $.TransOptions}}
+        <div class="ayah-translations">
+          {{range $ti, $ts := $.TransOptions}}
+          <p class="ayah-translation"
+             data-trans-idx="{{$ti}}"
+             data-trans-dir="{{(index $.TransOptions $ti).Dir}}"
+             dir="{{(index $.TransOptions $ti).Dir}}"
+             {{if ne $ti $.TransIdx}}hidden{{end}}>{{index $.AllAyahTrans $ti $i}}</p>
+          {{end}}
+        </div>
+        {{end}}
+      </section>
+    {{end}}
+  </article>
+  </div><!-- /surah-main -->
+</div>
+{{end}}

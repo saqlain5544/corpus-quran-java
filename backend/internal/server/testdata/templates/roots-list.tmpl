@@ -1,0 +1,44 @@
+{{define "roots-list.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-roots">
+  <header class="roots-header">
+    <h1>Roots</h1>
+    <div class="roots-controls">
+      <form method="get" action="/roots">
+        <label>Surah:
+          <select name="surah" onchange="this.form.submit()">
+            <option value="">All</option>
+            {{range .SurahOpts}}
+            <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
+            {{end}}
+          </select>
+        </label>
+        <label>Sort:
+          <select name="sort" onchange="this.form.submit()">
+            <option value="desc" {{if not .Asc}}selected{{end}}>Most frequent first</option>
+            <option value="asc" {{if .Asc}}selected{{end}}>Least frequent first</option>
+          </select>
+        </label>
+      </form>
+    </div>
+  </header>
+
+  <ol class="roots-list">
+    {{range .Results}}
+      <li class="root-row">
+        <a class="root-link" href="{{.Link}}">
+          <span class="root-buckwalter">{{.Root}}</span>
+          <span class="root-count">{{.Score}}×</span>
+        </a>
+        <p class="root-title">{{.Title}}</p>
+      </li>
+    {{end}}
+  </ol>
+
+  <nav class="pagination" aria-label="Pagination">
+    {{if .HasPrev}}<a class="page-prev" href="/roots?page={{dec .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">← Prev</a>{{end}}
+    <span class="page-info">Page {{.Page}}</span>
+    {{if .HasNext}}<a class="page-next" href="/roots?page={{inc .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">Next →</a>{{end}}
+  </nav>
+</div>
+{{end}}

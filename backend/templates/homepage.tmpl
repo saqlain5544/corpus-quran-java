@@ -1,0 +1,22 @@
+{{define "homepage.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-home">
+  <header class="page-header">
+    <h1>Quran Reader</h1>
+    <p class="page-subtitle">Read, search, and explore the Quran with full morphology.</p>
+  </header>
+  <section class="surah-list" aria-label="Surahs">
+    <ol class="surah-grid">
+      {{range $i, $s := .Surahs}}
+        <li class="surah-card">
+          <a class="surah-link" href="/surah/{{$s.Number}}">
+            <span class="surah-number">{{$s.Number}}</span>
+            <span class="surah-name">{{$s.Name}}</span>
+            <span class="surah-count">{{index $.Meta.AyahCounts $i}} ayahs</span>
+          </a>
+        </li>
+      {{end}}
+    </ol>
+  </section>
+</div>
+{{end}}
