@@ -899,53 +899,107 @@ func (s *Server) handleAPIWord(w http.ResponseWriter, r *http.Request) {
 // its MASAQ segments. Strategy:
 //
 //  1. If any segment is tagged as a proper noun (NOUN_PROP), use
-//     the first segment's WithoutDiacritics — proper nouns like
+//     the Stem segment's WithoutDiacritics — proper nouns like
 //     "ٱللَّهِ" decompose into DET (ال) + NOUN_PROP (له) in MASAQ
-//     but the lemma should be "الله" not "له".
-//  2. Else if the word has BOTH a Prefix and a Stem segment, join
-//     their SegmentedWord values — this gives a more readable
-//     lemma (e.g., "أنذر" for أَنذِر) rather than just the bare
-//     stem ("نذر").
-//  3. Else if any segment has MorphType == "Stem", use its
-//     SegmentedWord (just the stem consonants without prefixes/
-//     suffixes).
-//  4. Otherwise use the first segment's WithoutDiacritics.
+//     but the lemma should be "الله" not "له" or "ل".
+//  2. Else if the stem is a VERB, concatenate prefix + stem —
+//     verbal prefixes (أَنذِر → "أَنذِر", يَفْعَلُ → "يَفْعَل") carry
+//     semantic content and are part of the lemma. We exclude
+//     prefixes tagged as DET (definite article) which are NOT
+//     part of the lemma (e.g., ٱلْكِتَاب → "كتاب", not "الكتاب").
+//     We also exclude the article's bare lām prefix that MASAQ
+//     emits after a vowel-ending preposition — it has the same
+//     morph_tag (DET) so the DET filter handles it.
+//  3. Else (noun or particle), return just the stem. The lemma
+//     is the bare stem, never including DET or PREP prefixes.
+//  4. Fallback: first segment's WithoutDiacritics.
 func computeLemma(segs []types.MasaqSegment) string {
+	// Step 1: proper noun → use the Stem segment's without-diacritics
+	// form. If the stem doesn't start with "ال", the surface form
+	// elided the article's alif (this happens after a vowel-ending
+	// preposition like لِ or بِ, e.g., لِلَّهِ → "الله" not "له"). In
+	// that case we restore the elided alif so the lemma is the
+	// dictionary form of the proper noun.
 	for _, s := range segs {
 		if s.MorphTag == "NOUN_PROP" {
+			for _, ss := range segs {
+				if ss.MorphType == "Stem" {
+					lemma := ss.WithoutDiacritics
+					if !strings.HasPrefix(lemma, "ال") {
+						lemma = "ال" + lemma
+					}
+					return lemma
+				}
+			}
 			if len(segs) > 0 {
 				return segs[0].WithoutDiacritics
 			}
+			return ""
 		}
 	}
-	// Combine prefix + stem when both exist.
-	var prefix, stem string
-	var stemFound bool
-	for _, s := range segs {
-		switch s.MorphType {
-		case "Prefix":
-			if s.SegmentedWord != "" {
-				prefix = s.SegmentedWord
-			}
-		case "Stem":
-			if s.SegmentedWord != "" {
-				stem = s.SegmentedWord
-				stemFound = true
-			}
-		}
-	}
-	if stemFound {
-		return prefix + stem
-	}
+
+	// Step 2: locate the stem.
+	var stem string
 	for _, s := range segs {
 		if s.MorphType == "Stem" && s.SegmentedWord != "" {
-			return s.SegmentedWord
+			stem = s.SegmentedWord
+			break
 		}
 	}
+
+	// Step 3: gather verbal prefixes (those whose morph_tag is NOT
+	// DET — DET is the definite article, which is not part of the
+	// lemma). For verbs we walk the segments in order so the
+	// concatenated lemma matches the written form (e.g., أَنذِر =
+	// أَ + نذِر).
+	if isVerbLemma(segs) && stem != "" {
+		var b strings.Builder
+		for _, s := range segs {
+			if s.MorphType != "Prefix" {
+				continue
+			}
+			if s.MorphTag == "DET" {
+				// Definite article — never part of the lemma.
+				continue
+			}
+			if s.SegmentedWord != "" {
+				b.WriteString(s.SegmentedWord)
+			}
+		}
+		b.WriteString(stem)
+		return b.String()
+	}
+
+	// Step 4: noun / particle — return just the stem.
+	if stem != "" {
+		return stem
+	}
+
+	// Fallback: first segment's WithoutDiacritics, or empty.
 	if len(segs) > 0 {
 		return segs[0].WithoutDiacritics
 	}
 	return ""
+}
+
+// isVerbLemma reports whether the segments describe a verb (so the
+// lemma should include any non-article prefix). MASAQ tags the
+// verbal stems with morph_tag values starting with "V" (V, IV,
+// PV, CV) or containing "VERB" (VERB, VERB_IMPERFECT, etc.).
+func isVerbLemma(segs []types.MasaqSegment) bool {
+	for _, s := range segs {
+		if s.MorphType != "Stem" {
+			continue
+		}
+		t := s.MorphTag
+		if t == "V" || t == "IV" || t == "PV" || t == "CV" || t == "VERB" {
+			return true
+		}
+		if strings.HasPrefix(t, "V_") || strings.HasSuffix(t, "_VERB") {
+			return true
+		}
+	}
+	return false
 }
 
 // combineTranslations returns the word-level English translation.

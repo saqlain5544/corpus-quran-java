@@ -227,10 +227,17 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	// Join words + segments so we get the full picture per segment.
 	// The word table provides surah/ayah/word positions and the full
 	// token form; the segments table provides morphological detail.
+	// Note: WithoutDiacritics comes from `s.without_diacritics` (the
+	// segment), not `w.without_diacritics` (the whole word). For
+	// most words the word-level without-diacritics is the same as
+	// the concatenation of segment-level ones, but they diverge on
+	// prefixed words (e.g., لِلَّهِ = لِ + لَّهِ → word-level = "لله"
+	// but each segment has its own without-diacritics form: "ل" and "له").
 	rows, err := db.Query(`
 		SELECT w.surah_id, v.verse_number, w.word_number,
-		       w.token_imla_i, w.without_diacritics, w.translation,
-		       s.segment_number, s.text, s.morph_tag, s.morph_type,
+		       w.token_imla_i, w.translation,
+		       s.segment_number, s.text, s.without_diacritics,
+		       s.morph_tag, s.morph_type,
 		       s.syntactic_role, s.case_mood, s.case_mood_marker,
 		       s.invariable_declinable, s.possessive_construct,
 		       s.phrase, s.phrasal_function, s.gloss,
@@ -248,18 +255,23 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	for rows.Next() {
 		var (
 			surah, ayah, wordNo, segNo        int
-			tokenImalai, withoutDiac          string
+			tokenImalai                       string
 			translation                       string
-			segText, morphTag, morphType      string
+			segText, withoutDiac              string
+			morphTag, morphType               string
 			synRole, caseMood, caseMoodMarker string
 			invDecl, possCons                 string
 			phrase, phrasalFn, gloss          string
 			segID                             int
 		)
+		// Column order MUST match the SELECT in the query above.
+		// WithoutDiacritics is sourced from the segment row, not the
+		// word row — see the comment on the Query for why.
 		if err := rows.Scan(
 			&surah, &ayah, &wordNo,
-			&tokenImalai, &withoutDiac, &translation,
-			&segNo, &segText, &morphTag, &morphType,
+			&tokenImalai, &translation,
+			&segNo, &segText, &withoutDiac,
+			&morphTag, &morphType,
 			&synRole, &caseMood, &caseMoodMarker,
 			&invDecl, &possCons,
 			&phrase, &phrasalFn, &gloss,

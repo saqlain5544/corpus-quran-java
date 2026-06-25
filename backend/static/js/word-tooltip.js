@@ -135,17 +135,25 @@
     }
 
     // ── 8. Grammatical Tags ────────────────────────────────────
+    // Dedupe by tracking the last-emitted value, since the same
+    // tag can appear across multiple segments of the same word
+    // (e.g. two SUFFIX segments both tagged with NSUFF_*).
     const gramBits = [];
+    let lastEmitted = "";
+    function emit(tag) {
+      if (!tag) return;
+      if (tag === lastEmitted) return;
+      gramBits.push(tag);
+      lastEmitted = tag;
+    }
     for (const s of segs) {
-      if (s.SyntacticRole) gramBits.push(s.SyntacticRole);
-      if (s.CaseMood) gramBits.push(s.CaseMood);
+      emit(s.SyntacticRole);
+      emit(s.CaseMood);
       // The case mood marker is the actual vowel (KASRA/DHAMMA/FATHA)
       // attached to the word's last letter. Surface it next to the
       // abstract CaseMood tag so the user can see what sound the
       // case produces in recitation.
-      if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) {
-        gramBits.push(s.CaseMoodMarker);
-      }
+      emit(s.CaseMoodMarker);
     }
     if (gramBits.length || fn) {
       html += '<hr class="wt-sep">';

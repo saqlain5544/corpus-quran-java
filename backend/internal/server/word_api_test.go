@@ -7,25 +7,46 @@ import (
 )
 
 func TestComputeLemmaStem(t *testing.T) {
-	// Word with Prefix + Stem: lemma should be prefix + stem.
+	// Noun with PREP prefix + Stem: the lemma is just the stem.
+	// The preposition is NOT part of the lemma. (Was incorrectly
+	// returning "باسم" before the fix — the article-detector was
+	// concatenating ALL prefixes regardless of word class.)
 	segs := []types.MasaqSegment{
-		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "ب", MorphType: "Prefix"},
-		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "اسم", MorphType: "Stem"},
+		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "ب", MorphType: "Prefix", MorphTag: "PREP"},
+		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "اسم", MorphType: "Stem", MorphTag: "NOUN_ABSTRACT"},
 	}
-	if got := computeLemma(segs); got != "باسم" {
-		t.Errorf("computeLemma = %q want باسم", got)
+	if got := computeLemma(segs); got != "اسم" {
+		t.Errorf("computeLemma = %q want اسم (stem only — preposition is not part of noun lemma)", got)
 	}
 }
 
 func TestComputeLemmaCompoundVerb(t *testing.T) {
 	// Form IV verb أَنذِرِ (warn!) — MASAQ tags it as Prefix أ (CV_PREF)
-	// + Stem نذر (CV). Lemma should combine both → أنذر.
+	// + Stem نذر (CV). Lemma combines both → أنذر. Verbal prefixes
+	// carry semantic content (imperative mood here) so they ARE
+	// part of the lemma.
 	segs := []types.MasaqSegment{
-		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "أ", MorphType: "Prefix"},
-		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "نذر", MorphType: "Stem"},
+		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "أ", MorphType: "Prefix", MorphTag: "CV_PREF"},
+		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "نذر", MorphType: "Stem", MorphTag: "CV"},
 	}
 	if got := computeLemma(segs); got != "أنذر" {
 		t.Errorf("computeLemma = %q want أنذر", got)
+	}
+}
+
+func TestComputeLemmaDETPrefixExcluded(t *testing.T) {
+	// لِّلْمُتَّقِينَ: PREP لِ + DET لْ + NOUN_ACTIVE_PART مُتَّقِ +
+	// plural suffix. The DET (article's bare lām after a vowel-ending
+	// preposition) must NEVER be part of the lemma. The lemma is
+	// just the noun stem.
+	segs := []types.MasaqSegment{
+		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "ل", SegmentedWord: "لِ", MorphType: "Prefix", MorphTag: "PREP"},
+		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "ال", SegmentedWord: "لْ", MorphType: "Prefix", MorphTag: "DET"},
+		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "متق", SegmentedWord: "مُتَّقِ", MorphType: "Stem", MorphTag: "NOUN_ACTIVE_PART"},
+		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "ين", SegmentedWord: "ينَ", MorphType: "Suffix", MorphTag: "NSUFF_MASC_PL_GEN"},
+	}
+	if got := computeLemma(segs); got != "مُتَّقِ" {
+		t.Errorf("computeLemma = %q want مُتَّقِ (DET prefix excluded, only stem)", got)
 	}
 }
 

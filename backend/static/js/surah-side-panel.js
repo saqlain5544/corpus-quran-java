@@ -100,6 +100,11 @@
   // + every field that's non-empty. This is the full MASAQ data
   // for the word — no Func./tags duplication, no info hidden
   // behind the segment bars.
+  //
+  // SyntacticRole is suppressed when it equals MorphTag (e.g., the
+  // preposition لِ carries MorphTag=PREP and SyntacticRole=PREP —
+  // showing both is a redundant "PREP · PREP" pair). This kind of
+  // double-label is common for function-word prefixes in MASAQ.
   function renderSegment(s) {
     var arabic = esc(s.SegmentedWord || s.Word || "");
     var out = '<div class="ssp-seg">';
@@ -109,9 +114,13 @@
     var bits = [];
     if (s.MorphType) bits.push(s.MorphType);
     if (s.MorphTag) bits.push(s.MorphTag);
-    if (s.SyntacticRole) bits.push(s.SyntacticRole);
+    if (s.SyntacticRole && s.SyntacticRole !== s.MorphTag) {
+      bits.push(s.SyntacticRole);
+    }
     if (s.CaseMood) bits.push(s.CaseMood);
-    if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) bits.push(s.CaseMoodMarker);
+    if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) {
+      bits.push(s.CaseMoodMarker);
+    }
     if (s.Phrase) bits.push(s.Phrase);
     if (s.PhrasalFunction) bits.push(s.PhrasalFunction);
     if (s.InvariableDeclinable) bits.push(s.InvariableDeclinable);
