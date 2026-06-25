@@ -23,6 +23,14 @@ func enTokenizeLocal(s string) []string {
 	return enTokenRe.FindAllString(strings.ToLower(s), -1)
 }
 
+// arabicPairLocal is a (locKey, normalized Arabic text) tuple
+// captured during the segment scan. Package-level so buildArabicInvertedIndex
+// can take a slice of these as a parameter.
+type arabicPairLocal struct {
+	key    uint64
+	normed string
+}
+
 // LoadAll opens the detailed-quran.db SQLite database and constructs
 // the in-memory Quran, MasaqIndex, RootsIndex, and Meta. All data is
 // read from a single file — no preprocessing pipeline is needed.
@@ -264,6 +272,15 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	}
 	defer rows.Close()
 
+	// Segment text pairs captured during the main loop, used to
+	// build the Arabic-form inverted index at the end. We collect
+	// (locKey, normalizedSegmentText) so the index covers BOTH the
+	// segment-level morphemes (e.g. 'ل', 'رحمن') AND the word-level
+	// imla form. Per-segment indexing is what the previous Arabic
+	// search did implicitly (it iterated every segment of every
+	// word), so mirroring it preserves the match behaviour.
+	var arabicSegs []arabicPairLocal
+
 	for rows.Next() {
 		var (
 			surah, ayah, wordNo, segNo        int
@@ -292,6 +309,28 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 			return nil, err
 		}
 		key := loc.Key(surah, ayah, wordNo)
+		// Capture segment text for the Arabic inverted index. We
+		// normalize BOTH the segment-level text and its no-diac form
+		// because the search algorithm tries both at query time.
+		// We also index the word-level imla form so whole-word
+		// matches (e.g. 'الله' matching word (1,1,2) 'اللَّهِ' whose
+		// segments are just 'ل' and 'له') work via the exact-match
+		// path.
+		if segText != "" {
+			if n := normalizeArabicLocal(segText); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
+		if withoutDiac != "" {
+			if n := normalizeArabicLocal(withoutDiac); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
+		if tokenImalai != "" {
+			if n := normalizeArabicLocal(tokenImalai); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
 		seg := types.MasaqSegment{
 			ID:                   segID,
 			SuraNo:               surah,
@@ -332,6 +371,14 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	// on per-request IDF + doc-length passes.
 	idx.GlossAvgDocLen = computeAvgDocLen(idx.ByWord, enTokenField)
 	idx.TranslationAvgDocLen = computeAvgDocLen(idx.ByWord, translationField)
+
+	// Build inverted index over normalized Arabic surface forms.
+	// Indexes BOTH the segment-level Word/WithoutDiacritics (so
+	// morpheme-level matches like 'ل' → 'الرحمن' work via
+	// substring) AND the word-level imla form. The Arabic search
+	// algorithm scans the vocabulary for bidirectional substring
+	// matches at query time.
+	idx.ByArabicFormPostings = buildArabicInvertedIndex(arabicSegs)
 
 	return idx, nil
 }
@@ -400,6 +447,90 @@ func buildInvertedIndex(byWord map[uint64][]types.MasaqSegment, field func(types
 	for t := range postings {
 		lst := postings[t]
 		sort.Slice(lst, func(i, j int) bool { return lst[i] < lst[j] })
+	}
+	return postings
+}
+
+// normalizeArabicLocal strips tashkeel AND normalizes hamza variants,
+// matching the search.NormalizeArabic + types.NormalizeArabicRoot
+// behavior. Kept here to avoid an import cycle (search imports data).
+//
+// IMPORTANT: this function MUST stay in sync with the search package's
+// NormalizeArabic and the types package's NormalizeArabicRoot —
+// otherwise the Arabic search will silently miss matches.
+func normalizeArabicLocal(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 0x064B && r <= 0x065F: // tashkeel
+		case r == 0x0670, r == 0x0640: // alef khanjariya, tatweel
+		case r == 'أ', r == 'إ', r == 'آ', r == 'ٱ':
+			b.WriteRune('ا')
+		case r == 'ى', r == 'ٰ':
+			b.WriteRune('ي')
+		case r == 'ة':
+			b.WriteRune('ه')
+		case r == 'ؤ', r == 'ئ', r == 'ء':
+			b.WriteRune('ا')
+		case r == ' ':
+			// Skip whitespace — the lookup key is whitespace-free.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// buildArabicInvertedIndex constructs the `normalized Arabic form →
+// []LocKey` posting list from the segment-text pairs captured during
+// the main load loop. Each segment contributes (key, normalized-text)
+// entries; dedup by (key, normalized-text) keeps the posting lists
+// clean.
+//
+// Per-segment indexing (rather than per-word) preserves the previous
+// algorithm's behaviour: a query like 'الله' matches the segment 'ل'
+// (the definite article prefix) via the substring direction, which
+// matches every word containing that morpheme — that's the same set
+// the old linear scan produced.
+func buildArabicInvertedIndex(segPairs []arabicPairLocal) map[string][]uint64 {
+	// Use a set keyed by (locKey, normalized) to dedupe, then
+	// materialize postings.
+	seen := make(map[struct {
+		k uint64
+		t string
+	}]struct{}, len(segPairs))
+	postings := make(map[string][]uint64, 16000)
+	for _, p := range segPairs {
+		key := struct {
+			k uint64
+			t string
+		}{p.key, p.normed}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		postings[p.normed] = append(postings[p.normed], p.key)
+	}
+	// Sort and dedupe each posting list (different segments of the
+	// same word may have produced the same key).
+	for t := range postings {
+		lst := postings[t]
+		// Dedupe
+		uniq := lst[:0]
+		var last uint64
+		for i, k := range lst {
+			if i == 0 || k != last {
+				uniq = append(uniq, k)
+				last = k
+			}
+		}
+		postings[t] = uniq
+		// Sort
+		sort.Slice(uniq, func(i, j int) bool { return uniq[i] < uniq[j] })
 	}
 	return postings
 }

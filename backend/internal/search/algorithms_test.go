@@ -518,3 +518,60 @@ func TestEnglishSearchUsesInvertedIndex(t *testing.T) {
 		}
 	}
 }
+
+// TestArabicInvertedIndexPopulated verifies the load path builds
+// the Arabic-form inverted index. Without it, Arabic search falls
+// back to the slow linear path.
+func TestArabicInvertedIndexPopulated(t *testing.T) {
+	_, masaq, _ := loadTestData(t)
+	if masaq.ByArabicFormPostings == nil {
+		t.Fatal("ByArabicFormPostings is nil — load path failed to build the inverted index")
+	}
+	if len(masaq.ByArabicFormPostings) < 1000 {
+		t.Errorf("ByArabicFormPostings has only %d entries; expected ≥1000 unique Arabic forms",
+			len(masaq.ByArabicFormPostings))
+	}
+	// Spot check: 'الله' (the normalized form of اللَّهِ / الله / etc.)
+	// must be in the index — it's the most-frequent Arabic token.
+	if posts := masaq.ByArabicFormPostings["الله"]; len(posts) < 100 {
+		t.Errorf("postings[الله] has only %d entries; expected ≥100", len(posts))
+	}
+}
+
+// TestArabicSearchFindsBasmala was an existing test — kept here
+// for documentation of the new algorithm's behaviour at the
+// boundary case. The basmala's "اللَّهِ" word (1:1:2) normalizes
+// to "الله" which must be findable in the inverted index.
+//
+// Note: MASAQ splits this word into segments 'ل' (article) + 'لَّهِ'
+// (stem). Neither segment alone normalizes to "الله", but the
+// word-level imla "اللَّهِ" does — so the inverted index must also
+// index word-level text, not just per-segment text. See
+// backend/internal/data/load.go::buildArabicInvertedIndex.
+func TestArabicSearchTopResultIsExact(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	// For "ٱللَّهِ" the very first result MUST be the basmala.
+	r := Arabic("ٱللَّهِ", masaq, q, 10, 0)
+	if len(r) == 0 {
+		t.Fatal("no results for ٱللَّهِ")
+	}
+	if r[0].Surah != 1 || r[0].Ayah != 1 || r[0].Word != 2 {
+		t.Errorf("first hit = %d:%d w=%d want 1:1 w=2 (basmala اللَّهِ)",
+			r[0].Surah, r[0].Ayah, r[0].Word)
+	}
+}
+
+// TestArabicSearchSkipsSingleCharMatches verifies the algorithm
+// doesn't return spurious matches from 1-character morphemes like
+// 'ل' (the definite article prefix). Without the len ≥ 2 guard,
+// every word containing 'ل' would match every query containing 'ل'.
+func TestArabicSearchSkipsSingleCharMatches(t *testing.T) {
+	q, masaq, _ := loadTestData(t)
+	// Query 'ل' is too short — should return nil (Go's algorithm
+	// would return thousands of spurious matches via the empty-
+	// segment quirk).
+	r := Arabic("ل", masaq, q, 50, 0)
+	if len(r) > 0 {
+		t.Errorf("Arabic(ل) returned %d results; expected 0 (single-char query rejected)", len(r))
+	}
+}

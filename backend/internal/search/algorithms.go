@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"quranreader/loc"
 	"quranreader/types"
@@ -15,43 +16,195 @@ import (
 
 // Arabic searches MASAQ for Arabic-word matches, optionally filtered
 // to a single surah (filterSurah > 0).
+//
+// Algorithm (post-inverted-index, see /tmp/algo-research/01_data_structures.md):
+//
+//  1. NormalizeArabic the query.
+//  2. Look up `m.ByArabicFormPostings[normalized query]` for exact
+//     matches (class 0).
+//  3. Scan the vocabulary to find words where the query is a substring
+//     of the vocab word OR vice versa (class 1). Skip vocab entries
+//     shorter than 2 chars to avoid noise from single-letter morphemes
+//     (like 'ل' the definite article prefix, which would match every
+//     query containing 'ل' anywhere).
+//  4. Union the candidate postings and rank by (class asc, surah asc,
+//     ayah asc, word asc).
+//
+// Falls back to the O(N) linear scan via arabicOrLemmaLinear when the
+// MasaqIndex has no inverted index (e.g. constructed manually in tests).
 func Arabic(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterSurah int) []SearchResult {
+	return arabicOrLemma(q, m, quran, limit, filterSurah, false)
+}
+
+// Lemma is the shared implementation used by Arabic() and the Lemma()
+// search. The `isLemma` flag selects whether to search against the
+// computed lemma form instead of the raw word.
+func arabicOrLemma(q string, m *types.MasaqIndex, quran *types.Quran, limit, filterSurah int, isLemma bool) []SearchResult {
 	if m == nil || limit <= 0 {
 		return nil
 	}
 	q = NormalizeArabic(q)
-	if q == "" {
+	// Reject very short queries — single-character Arabic queries
+	// match too many things (the morpheme 'ل' alone appears in
+	// thousands of words as the definite article prefix). Mirror
+	// the English-search threshold (len < 2 chars returns nil).
+	// We use utf8.RuneCountInString because Arabic chars are
+	// multi-byte in UTF-8 — len("ل") is 2 bytes, not 1 rune.
+	if q == "" || utf8.RuneCountInString(q) < 2 {
 		return nil
+	}
+	kind := "arabic"
+	postings := m.ByArabicFormPostings
+	if isLemma {
+		kind = "lemma"
+		// The Lemma index is built separately in load.go — we use the
+		// Arabic form postings as a fallback for now (Lemma is
+		// computed at search time).
+		postings = m.ByArabicFormPostings
+	}
+	if postings == nil {
+		return arabicOrLemmaLinear(q, m, quran, limit, filterSurah, isLemma)
+	}
+
+	// Build candidate set.
+	cands := make(map[uint64]int, 4096) // doc_id → class
+	// 1. Exact match
+	for _, key := range postings[q] {
+		cands[key] = 0
+	}
+	// 2. Bidirectional substring match. Both directions of containment
+	//    are treated as class 1. We skip single-character vocab entries
+	//    to avoid spurious matches (e.g., a 1-char query matches every
+	//    word containing that character).
+	if len(q) >= 2 {
+		for v, posts := range postings {
+			if v == q || len(v) < 2 {
+				continue
+			}
+			matched := false
+			if len(v) > len(q) && strings.Contains(v, q) {
+				matched = true
+			} else if len(q) > len(v) && strings.Contains(q, v) {
+				matched = true
+			}
+			if !matched {
+				continue
+			}
+			for _, key := range posts {
+				if _, ok := cands[key]; !ok || cands[key] > 1 {
+					cands[key] = 1
+				}
+			}
+		}
+	}
+	out := make([]SearchResult, 0, len(cands))
+	for key, cls := range cands {
+		surah, ayah, word := loc.Decode(key)
+		if filterSurah > 0 && surah != filterSurah {
+			continue
+		}
+		// For display: use the word's stored imla text (first non-empty
+		// gloss segment). For Lemma search, use the computed lemma.
+		segs := m.ByWord[key]
+		var title string
+		if isLemma {
+			title = computeLemmaFromSegs(segs)
+		} else {
+			for _, s := range segs {
+				if s.Word != "" {
+					title = s.Word
+					break
+				}
+			}
+		}
+		out = append(out, SearchResult{
+			Kind:  kind,
+			Surah: surah,
+			Ayah:  ayah,
+			Word:  word,
+			Title: title,
+			Link:  "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
+			Score: cls * 1000, // rank-encoded for API stability
+		})
+	}
+	// Sort: class asc, surah asc, ayah asc, word asc
+	slices.SortFunc(out, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Surah, b.Surah),
+			cmp.Compare(a.Ayah, b.Ayah),
+			cmp.Compare(a.Word, b.Word),
+		)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	for i := range out {
+		out[i].Snippet = HighlightSnippet(out[i].Title, q)
+		out[i].VerseText = verseText(quran, out[i].Surah, out[i].Ayah)
+	}
+	return out
+}
+
+// arabicOrLemmaLinear is the legacy O(N) fallback for tests / data
+// paths that build a MasaqIndex without the inverted index.
+func arabicOrLemmaLinear(q string, m *types.MasaqIndex, quran *types.Quran, limit, filterSurah int, isLemma bool) []SearchResult {
+	if m == nil || limit <= 0 {
+		return nil
+	}
+	q = NormalizeArabic(q)
+	// Reject very short queries — see arabicOrLemma for rationale.
+	if q == "" || len(q) < 2 {
+		return nil
+	}
+	kind := "arabic"
+	if isLemma {
+		kind = "lemma"
 	}
 	bestByKey := make(map[uint64]SearchResult, 1000)
 	scoreByKey := make(map[uint64]int, 1000)
 
 	for key, segs := range m.ByWord {
+		var best int = 1 << 30
 		for _, s := range segs {
-			best := scoreArabic(q, s.Word)
-			if alt := scoreArabic(q, s.WithoutDiacritics); alt < best {
-				best = alt
+			cand := scoreArabic(q, s.Word)
+			if alt := scoreArabic(q, s.WithoutDiacritics); alt < cand {
+				cand = alt
 			}
-			if best >= 1<<20 {
-				continue
+			if cand < best {
+				best = cand
 			}
-			if prev, ok := scoreByKey[key]; ok && prev <= best {
-				continue
+		}
+		if best >= 1<<20 {
+			continue
+		}
+		if prev, ok := scoreByKey[key]; ok && prev <= best {
+			continue
+		}
+		surah, ayah, word := loc.Decode(key)
+		if filterSurah > 0 && surah != filterSurah {
+			continue
+		}
+		scoreByKey[key] = best
+		var title string
+		if isLemma {
+			title = computeLemmaFromSegs(segs)
+		} else {
+			for _, s := range segs {
+				if s.Word != "" {
+					title = s.Word
+					break
+				}
 			}
-			surah, ayah, word := loc.Decode(key)
-			if filterSurah > 0 && surah != filterSurah {
-				continue
-			}
-			scoreByKey[key] = best
-			bestByKey[key] = SearchResult{
-				Kind:  "arabic",
-				Surah: surah,
-				Ayah:  ayah,
-				Word:  word,
-				Title: s.Word,
-				Link:  "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
-				Score: best,
-			}
+		}
+		bestByKey[key] = SearchResult{
+			Kind:  kind,
+			Surah: surah,
+			Ayah:  ayah,
+			Word:  word,
+			Title: title,
+			Link:  "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
+			Score: best,
 		}
 	}
 	if len(bestByKey) == 0 {

@@ -85,11 +85,12 @@ type MasaqSegment struct {
 // 64-bit LocKey(surah, ayah, word) so each fetch is a single hashmap
 // lookup with no allocations.
 //
-// The optional inverted indexes (ByEnTokenPostings, ByTranslationPostings)
-// are populated by the data package at LoadAll time and used by the
-// search package for sub-linear English/Translation lookups. They map
-// each tokenized gloss / translation token to a sorted []uint64 of
-// LocKey postings (the standard "postings list" of an inverted index).
+// The optional inverted indexes (ByEnTokenPostings, ByTranslationPostings,
+// ByArabicFormPostings) are populated by the data package at LoadAll
+// time and used by the search package for sub-linear lookups. They map
+// each tokenized gloss / translation token (or normalized Arabic form)
+// to a sorted []uint64 of LocKey postings (the standard "posting list"
+// of an inverted index).
 //
 // GlossAvgDocLen / TranslationAvgDocLen hold the BM25 average doc
 // length per field, pre-computed at LoadAll time so the per-query
@@ -105,6 +106,7 @@ type MasaqIndex struct {
 	ByWord                map[uint64][]MasaqSegment
 	ByEnTokenPostings     map[string][]uint64 // en-token (Gloss) → LocKey postings
 	ByTranslationPostings map[string][]uint64 // en-token (Translation) → LocKey postings
+	ByArabicFormPostings  map[string][]uint64 // normalized Arabic surface form → postings
 	GlossAvgDocLen        float64             // avg |unique tokens| per doc (Gloss)
 	TranslationAvgDocLen  float64             // avg |unique tokens| per doc (Translation)
 }
