@@ -84,18 +84,26 @@
     }
 
     // ── 5. Morphology Tags ─────────────────────────────────────
+    // Only MorphType + MorphTag (the core POS / segment role).
+    // Declension state (InvariableDeclinable, PossessiveConstruct)
+    // and grammatical tags (SyntacticRole, CaseMood, etc.) are
+    // rendered in their own sections below — including them here
+    // would just repeat the same info twice.
     if (segs.length > 0) {
-      html += '<hr class="wt-sep">';
-      html += '<div class="wt-tags">';
-      for (const s of segs) {
-        const bits = [];
-        if (s.MorphType) bits.push(s.MorphType);
-        if (s.MorphTag) bits.push(s.MorphTag);
-        if (bits.length) {
-          html += '<span class="wt-tag">' + escape(bits.join(' · ')) + '</span>';
+      const hasMorphTags = segs.some(s => s.MorphType || s.MorphTag);
+      if (hasMorphTags) {
+        html += '<hr class="wt-sep">';
+        html += '<div class="wt-tags">';
+        for (const s of segs) {
+          const bits = [];
+          if (s.MorphType) bits.push(s.MorphType);
+          if (s.MorphTag) bits.push(s.MorphTag);
+          if (bits.length) {
+            html += '<span class="wt-tag">' + escape(bits.join(' · ')) + '</span>';
+          }
         }
+        html += '</div>';
       }
-      html += '</div>';
     }
 
     // ── 6. Phrase + Function ────────────────────────────────────

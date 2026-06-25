@@ -97,39 +97,57 @@
   }
 
   // Render one MASAQ segment as a labelled row: the segmented word
-  // + every field that's non-empty. This is the full MASAQ data
-  // for the word — no Func./tags duplication, no info hidden
-  // behind the segment bars.
-  //
-  // SyntacticRole is suppressed when it equals MorphTag (e.g., the
-  // preposition لِ carries MorphTag=PREP and SyntacticRole=PREP —
-  // showing both is a redundant "PREP · PREP" pair). This kind of
-  // double-label is common for function-word prefixes in MASAQ.
+  // + every non-empty field grouped by category. We previously
+  // dumped every field into one long " · "-separated list, which
+  // read as visual noise ("Stem · OTHER · ACRON · NOMINATIVE ·
+  // SUKUN · INVAR" — six tags for one word, with multiple fields
+  // describing the same thing). The grouped layout shows:
+  //   POS:    MorphType · MorphTag  (e.g. "Stem · OTHER")
+  //   Grammar: SyntacticRole, CaseMood(+marker), Phrase + Func.
+  //   Decl.:   Invariable, PossessiveConstruct
+  // …so the reader can scan by category rather than parse a flat
+  // list. Duplicates are also suppressed (e.g. PREP/·PREP).
   function renderSegment(s) {
     var arabic = esc(s.SegmentedWord || s.Word || "");
     var out = '<div class="ssp-seg">';
     out += '<span class="ssp-seg-text" lang="ar" dir="rtl">' + arabic + '</span>';
-    // One-line tag row — every MASAQ field, space-separated, in a
-    // canonical order (morphology, grammar, declension, phrase).
-    var bits = [];
-    if (s.MorphType) bits.push(s.MorphType);
-    if (s.MorphTag) bits.push(s.MorphTag);
+
+    // Category 1 — Morphology (POS / segment type)
+    var morphBits = [];
+    if (s.MorphType) morphBits.push(s.MorphType);
+    if (s.MorphTag) morphBits.push(s.MorphTag);
+    if (morphBits.length) {
+      out += ' <span class="ssp-tag ssp-tag--pos">' + esc(morphBits.join(' · ')) + '</span>';
+    }
+
+    // Category 2 — Grammar (SyntacticRole + Case + Phrase)
+    var gramBits = [];
     if (s.SyntacticRole && s.SyntacticRole !== s.MorphTag) {
-      bits.push(s.SyntacticRole);
+      gramBits.push(s.SyntacticRole);
     }
-    if (s.CaseMood) bits.push(s.CaseMood);
-    if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) {
-      bits.push(s.CaseMoodMarker);
+    if (s.CaseMood) {
+      // CaseMoodMarker is the actual vowel (KASRA/DHAMMA/FATHA) —
+      // surface it next to the abstract CaseMood tag.
+      gramBits.push(s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood
+        ? s.CaseMood + ' ' + s.CaseMoodMarker
+        : s.CaseMood);
     }
-    if (s.Phrase) bits.push(s.Phrase);
-    if (s.PhrasalFunction) bits.push(s.PhrasalFunction);
-    if (s.InvariableDeclinable) bits.push(s.InvariableDeclinable);
+    if (s.Phrase) gramBits.push(s.Phrase);
+    if (s.PhrasalFunction) gramBits.push(s.PhrasalFunction);
+    if (gramBits.length) {
+      out += ' <span class="ssp-tag ssp-tag--grammar">' + esc(gramBits.join(' · ')) + '</span>';
+    }
+
+    // Category 3 — Declension state (when non-default)
+    var declBits = [];
+    if (s.InvariableDeclinable) declBits.push(s.InvariableDeclinable);
     if (s.PossessiveConstruct && s.PossessiveConstruct !== "NOT_CONSTRUCT") {
-      bits.push(s.PossessiveConstruct);
+      declBits.push(s.PossessiveConstruct);
     }
-    if (bits.length) {
-      out += ' <span class="ssp-seg-tags">' + esc(bits.join(' · ')) + '</span>';
+    if (declBits.length) {
+      out += ' <span class="ssp-tag ssp-tag--decl">' + esc(declBits.join(' · ')) + '</span>';
     }
+
     out += '</div>';
     return out;
   }

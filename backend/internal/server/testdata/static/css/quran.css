@@ -258,6 +258,35 @@
 	grid-template-columns: 1fr;
 	gap: var(--sp-4);
 }
+/* ── Translation selector ──────────────────────────────────── */
+.sh-control select#trans-select {
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  background: var(--bg);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  max-width: 14rem;
+  /* The chevron is the browser's default; we add a subtle gradient
+     overlay to make the dropdown more obviously interactive. */
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-muted) 50%);
+  background-position: calc(100% - 14px) center;
+  background-size: 6px 6px;
+  background-repeat: no-repeat;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  padding-inline-end: var(--sp-6);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+.sh-control select#trans-select:hover { border-color: var(--accent); }
+.sh-control select#trans-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* ── Side panel: mobile first ──────────────────────────────────
  * Mobile: positioned as a fixed overlay near the top of the viewport,
  * toggled open by JS on word click.
@@ -319,6 +348,32 @@
 	text-align: center;
 	margin: var(--sp-8) 0;
 }
+.ssp-empty-state {
+	text-align: center;
+	padding: var(--sp-12) var(--sp-6);
+	color: var(--ink-muted);
+	display: grid;
+	gap: var(--sp-2);
+	justify-items: center;
+}
+.ssp-empty-icon {
+	font-size: var(--fs-3xl);
+	color: var(--ink-soft);
+	line-height: 1;
+	margin: 0;
+}
+.ssp-empty-title {
+	font: 600 var(--fs-md)/1.2 var(--font-latin);
+	color: var(--ink);
+	margin: 0;
+}
+.ssp-empty-body {
+	font-size: var(--fs-sm);
+	color: var(--ink-soft);
+	max-width: 20rem;
+	line-height: 1.5;
+	margin: 0;
+}
 
 /* Word header */
 .ssp-word {
@@ -342,10 +397,14 @@
 }
 .ssp-segs {
 	margin: var(--sp-1) 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--sp-1);
 }
 .ssp-seg {
 	display: flex;
-	gap: var(--sp-2);
+	flex-wrap: wrap;
+	gap: var(--sp-1) var(--sp-2);
 	align-items: baseline;
 	padding: 2px 0;
 	font-size: var(--fs-xs);
@@ -355,9 +414,19 @@
 	color: var(--ink);
 	min-width: 4rem;
 }
-.ssp-seg-tags {
-	color: var(--ink-muted);
+/* Tag pills — color-coded by category so the reader can scan by
+   grammar function at a glance. POS = gold (matches the manuscript
+   accent), grammar = soft ink, declension = muted. */
+.ssp-tag {
+	display: inline-block;
+	padding: 1px var(--sp-2);
+	border-radius: 999px;
+	font-size: var(--fs-xs);
+	letter-spacing: 0.01em;
 }
+.ssp-tag--pos { background: var(--word-hover-bg); color: var(--accent-strong); font-weight: 600; }
+.ssp-tag--grammar { background: var(--bg-sunken); color: var(--ink); }
+.ssp-tag--decl { background: transparent; color: var(--ink-muted); border: var(--border-w) solid var(--rule); }
 .ssp-buckwalter {
 	font-family: var(--font-mono);
 	color: var(--ink-soft);

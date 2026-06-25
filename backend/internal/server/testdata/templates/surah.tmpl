@@ -8,7 +8,14 @@
       <span class="ssp-header-hint">Click any word</span>
     </header>
     <div class="ssp-inner" id="ssp-content">
-      <p class="ssp-empty">Click a word to see root details.</p>
+      <div class="ssp-empty-state">
+        <p class="ssp-empty-icon" aria-hidden="true">⤵</p>
+        <p class="ssp-empty-title">Click any word</p>
+        <p class="ssp-empty-body">
+          Hover for a quick tooltip, or click for the full root analysis,
+          lemma frequency, and morphological breakdown.
+        </p>
+      </div>
     </div>
   </aside>
 
@@ -83,7 +90,15 @@
       {{$lastWordNo := 0}}
       {{range $t := $ae.Ayah.Tokens}}{{if eq $t.Kind "word"}}{{if gt $t.WordNo $lastWordNo}}{{$lastWordNo = $t.WordNo}}{{end}}{{end}}{{end}}
 
-      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}">
+      {{/*
+        data-search-text is the pre-computed normalized text for
+        the local in-page search (surah-header.js). The hot loop
+        reads this attribute instead of textContent on every
+        submit, which means no DOM traversal per ayah per search.
+        We populate it server-side so the cache is ready on first
+        paint — no FOUC, no JS back-fill pass.
+      */}}
+      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}" data-search-text="{{$ae.Ayah.SearchText}}">
         <button type="button" class="ayah-bookmark" data-component="ayah-bookmark"
                 data-surah="{{$.Surah.Number}}" data-ayah="{{$an}}"
                 aria-label="Bookmark verse {{$an}}" title="Bookmark">☆</button>
@@ -108,10 +123,12 @@
                   data-component="word"
                   aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
                 {{- if $isLastWord -}}
-                  <svg class="ayah-number" viewBox="0 0 24 24" width="1.4em" height="1.4em" aria-label="Verse {{$an}}">
-                    <circle cx="12" cy="13" r="11" class="ayah-number-bg"/>
-                    <text x="12" y="17" text-anchor="middle" class="ayah-number-text">{{$an}}</text>
-                  </svg>
+                  <a class="ayah-number-link" href="#verse-{{$an}}" aria-label="Verse {{$an}}" title="Verse {{$an}}">
+                    <svg class="ayah-number" viewBox="0 0 24 24" width="1.4em" height="1.4em" aria-hidden="true">
+                      <circle cx="12" cy="13" r="11" class="ayah-number-bg"/>
+                      <text x="12" y="17" text-anchor="middle" class="ayah-number-text">{{$an}}</text>
+                    </svg>
+                  </a>
                 {{- end -}}
               </span>
             {{- else -}}
