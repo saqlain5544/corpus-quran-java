@@ -44,7 +44,27 @@
   --grid-gap:  var(--sp-4);
   --grid-max:  80rem;
 
-  /* Z-index */
+  /* Global header height — used by every element that needs to
+   * stick below the header. Centralized so changing the header
+   * height (e.g. taller on mobile) updates every sticky child
+   * in one place. See app.js + components.css for usage. */
+  --gh-height: 56px;
+
+  /* Z-index
+   *
+   * Stacking hierarchy (lowest → highest):
+   *   --z-base      1     in-flow content
+   *   --z-sticky  100     sticky headers, slide-out drawers, fixed panels
+   *   --z-tooltip 200     word tooltips, floating popovers
+   *   --z-modal   300     <dialog> modal backdrops
+   *
+   * The surah-search-footer needs to sit ABOVE the side panel
+   * (both --z-sticky by default) because the footer is `position:
+   * fixed; bottom: 0` while the panel can extend near the bottom
+   * of the viewport. Without this raise, the footer is hidden
+   * behind the panel's bottom edge. Using calc(z-sticky + 1)
+   * keeps both at the same tier — no new --z-* variable needed.
+   */
   --z-base:    1;
   --z-sticky:  100;
   --z-tooltip: 200;
@@ -94,6 +114,7 @@
   --mark-pause:     oklch(63% 0.012 75);    /* subdued */
 
   --word-hover-bg:  oklch(50% 0.110 70 / 0.10);   /* accent at 10% alpha */
+  --focus-ring-bg:  oklch(50% 0.110 70 / 0.20);   /* accent at 20% alpha (slider thumb focus) */
   --tooltip-bg:     oklch(100% 0 0);
   --modal-backdrop: oklch(20% 0.008 60 / 0.4);
 
@@ -103,9 +124,24 @@
   --panel-border:   oklch(60% 0.080 75);     /* gold hairline */
 }
 
-/* Dark theme — night reading. Bright gold pops against deep
- * warm-black backgrounds; chroma is slightly higher to compensate
- * for the eye's lower saturation sensitivity in low light. */
+/* ── Dark theme palette (single source of truth) ────────────────
+ * The dark theme is defined ONCE on a class selector. Two
+ * conditions trigger that class:
+ *   1. The user has data-theme="dark" (manual toggle)
+ *   2. The user has prefers-color-scheme: dark AND hasn't toggled
+ *      (data-theme is unset / empty)
+ *
+ * layout.tmpl sets data-theme="light" or "dark" on the <html>
+ * element. For case 2, layout.tmpl's inline <script> runs
+ * BEFORE any CSS loads and decides the initial value based on
+ * prefers-color-scheme — so by the time this stylesheet applies,
+ * the html element already has data-theme="dark" (or not).
+ *
+ * Net result: ONE block of dark tokens. No risk of drift.
+ * The [data-theme="dark"] selector is the canonical "user wants
+ * dark" signal; we don't need a separate prefers-color-scheme
+ * block at all.
+ */
 [data-theme="dark"] {
   --bg:             oklch(18% 0.008 65);
   --bg-elev:        oklch(23% 0.012 70);
@@ -127,36 +163,14 @@
   --mark-pause:     oklch(55% 0.014 75);
 
   --word-hover-bg:  oklch(78% 0.130 80 / 0.12);
+  --focus-ring-bg:  oklch(78% 0.130 80 / 0.22);
   --tooltip-bg:     oklch(23% 0.012 70);
   --modal-backdrop: oklch(0% 0 0 / 0.6);
 
   --panel-bg:       oklch(25% 0.020 78);     /* gold-tinted elevated */
   --panel-border:   oklch(60% 0.100 80);     /* bright gold hairline */
-}
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    --bg:             oklch(18% 0.008 65);
-    --bg-elev:        oklch(23% 0.012 70);
-    --bg-sunken:      oklch(15% 0.006 60);
-    --ink:            oklch(91% 0.015 85);
-    --ink-muted:      oklch(72% 0.018 80);
-    --ink-soft:       oklch(55% 0.014 75);
-    --rule:           oklch(32% 0.014 70);
-    --accent:         oklch(78% 0.130 80);
-    --accent-soft:    oklch(50% 0.110 70);
-    --accent-strong:  oklch(86% 0.140 85);
-    --error:          oklch(68% 0.140 25);
-    --success:        oklch(72% 0.080 155);
-    --mark-quran-rub: oklch(78% 0.130 80);
-    --mark-sajdah:    oklch(72% 0.080 155);
-    --mark-pause:     oklch(55% 0.014 75);
-    --word-hover-bg:  oklch(78% 0.130 80 / 0.12);
-    --tooltip-bg:     oklch(23% 0.012 70);
-    --modal-backdrop: oklch(0% 0 0 / 0.6);
-    --panel-bg:       oklch(25% 0.020 78);
-    --panel-border:   oklch(60% 0.100 80);
-  }
+  color-scheme: dark;   /* tells UA to render form controls etc. dark */
 }
 
 @media (prefers-reduced-motion: reduce) {

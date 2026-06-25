@@ -255,7 +255,7 @@
  * Sticky just below the global header. */
 .surah-header {
   position: sticky;
-  top: 56px;
+  top: var(--gh-height);
   z-index: calc(var(--z-sticky) - 1);
   background: var(--bg);
   border-bottom: var(--border-w) solid var(--rule);
@@ -406,7 +406,7 @@
 }
 .sh-control input[type="range"]:hover::-webkit-slider-thumb,
 .sh-control input[type="range"]:focus::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px rgba(138, 90, 43, 0.20);
+  box-shadow: 0 0 0 4px var(--focus-ring-bg);
 }
 .sh-control input[type="range"]:focus-visible::-webkit-slider-thumb {
   outline: 2px solid var(--accent);
@@ -436,7 +436,7 @@
 }
 .sh-control input[type="range"]:hover::-moz-range-thumb,
 .sh-control input[type="range"]:focus::-moz-range-thumb {
-  box-shadow: 0 0 0 4px rgba(138, 90, 43, 0.20);
+  box-shadow: 0 0 0 4px var(--focus-ring-bg);
 }
 .sh-control input[type="range"]:focus-visible::-moz-range-thumb {
   outline: 2px solid var(--accent);

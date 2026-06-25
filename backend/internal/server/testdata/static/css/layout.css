@@ -15,6 +15,21 @@ html, body {
 
 body {
   min-height: 100vh;
+  /* Smooth theme transition. When the user toggles data-theme or
+   * the OS-level prefers-color-scheme flips, the page background
+   * and text cross-fade instead of snapping. Kept short (120ms)
+   * so the toggle feels instant but the eye can follow.
+   *
+   * Users with prefers-reduced-motion: reduce get this disabled
+   * via the global override further down (transition-duration:
+   * 0.01ms !important;).
+   *
+   * We only transition color-scheme-related properties (not all
+   * properties) so unrelated transitions (e.g. opacity on
+   * dropdowns) don't get clobbered by this. */
+  transition:
+    background-color var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out);
 }
 
 a { color: var(--accent); text-decoration: none; }

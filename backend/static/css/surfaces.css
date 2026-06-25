@@ -126,9 +126,9 @@
 }
 .layout-aside--sticky {
   position: sticky;
-  top: calc(56px + var(--sp-4));
+  top: calc(var(--gh-height) + var(--sp-4));
   align-self: start;
-  max-height: calc(100vh - 56px - var(--sp-8));
+  max-height: calc(100vh - var(--gh-height) - var(--sp-8));
   overflow-y: auto;
 }
 

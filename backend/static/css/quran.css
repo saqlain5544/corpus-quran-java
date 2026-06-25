@@ -211,7 +211,10 @@
 	border: var(--border-w) solid var(--rule);
 	border-bottom: 0;
 	border-radius: var(--radius-md) var(--radius-md) 0 0;
-	z-index: var(--z-sticky);
+	/* Above the surah side panel (also z-sticky) so the footer is
+	   visible when both are on screen. Still below the word
+	   tooltip (z-tooltip) so the tooltip floats above the footer. */
+	z-index: calc(var(--z-sticky) + 1);
 	font-size: var(--fs-sm);
 }
 .surah-search-footer button {
