@@ -37,19 +37,15 @@ func LoadTranslations(dir string) (*Translations, error) {
 		err error
 	}
 	var wg sync.WaitGroup
-	wg.Add(2)
-
 	var enRes, urRes result
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		s, err := loadTransSet(dir+"/en.sahih.xml", "Saheeh International", "en", "ltr")
 		enRes = result{s, err}
-	}()
-	go func() {
-		defer wg.Done()
+	})
+	wg.Go(func() {
 		s, err := loadTransSet(dir+"/ur.junagarhi.xml", "محمد جوناگڑھی", "ur", "rtl")
 		urRes = result{s, err}
-	}()
+	})
 	wg.Wait()
 
 	if enRes.err != nil {

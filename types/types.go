@@ -14,11 +14,13 @@ type Quran struct {
 
 // Surah holds the metadata and verses for one chapter.
 type Surah struct {
-	Number    int
-	Name      string // Arabic
-	NameLatin string // optional English transliteration (empty for now)
-	Bismillah string // raw text, may be empty for surah 9
-	Ayahs     map[int]*Ayah
+	Number             int
+	Name               string // Arabic
+	NameLatin          string // optional English transliteration (empty if unknown)
+	RevelationType     string // "Meccan" or "Medinan"
+	EnglishTranslation string // short English descriptor (e.g. "The Opening")
+	Bismillah          string // raw text, may be empty for surah 9
+	Ayahs              map[int]*Ayah
 }
 
 // Ayah holds the raw text (with marks inline) and a pre-parsed list of

@@ -46,19 +46,27 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 		err error
 	}
 
-	var (
-		wg         sync.WaitGroup
-		qCh        = make(chan qResult, 1)
-		mCh        = make(chan mResult, 1)
-		rCh        = make(chan rResult, 1)
-		startQuran = func() { wg.Add(1); go func() { defer wg.Done(); q, e := loadQuranFromDB(db); qCh <- qResult{q, e} }() }
-		startMasaq = func() { wg.Add(1); go func() { defer wg.Done(); m, e := loadMasaqFromDB(db); mCh <- mResult{m, e} }() }
-		startRoots = func() { wg.Add(1); go func() { defer wg.Done(); r, e := loadRootsFromDB(db); rCh <- rResult{r, e} }() }
-	)
+	// Use Go 1.25's WaitGroup.Go() — cleaner than the manual
+	// Add(1) / defer Done() dance. The buffers of size 1 ensure
+	// each goroutine can exit immediately after writing its result,
+	// even if the receiver hasn't read yet.
+	qCh := make(chan qResult, 1)
+	mCh := make(chan mResult, 1)
+	rCh := make(chan rResult, 1)
 
-	startQuran()
-	startMasaq()
-	startRoots()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		q, e := loadQuranFromDB(db)
+		qCh <- qResult{q, e}
+	})
+	wg.Go(func() {
+		m, e := loadMasaqFromDB(db)
+		mCh <- mResult{m, e}
+	})
+	wg.Go(func() {
+		r, e := loadRootsFromDB(db)
+		rCh <- rResult{r, e}
+	})
 	wg.Wait()
 	close(qCh)
 	close(mCh)
@@ -84,8 +92,12 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 // loadQuranFromDB reads surahs and verses, tokenizes each verse,
 // and builds the Quran struct with proper Bismillah handling.
 func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
-	// Surah names.
-	rows, err := db.Query("SELECT id, name FROM surahs ORDER BY id")
+	// Surah names. We pull every column the `surahs` table exposes —
+	// even ones the current UI doesn't render — so the in-memory
+	// struct is the single source of truth and adding a new field to
+	// the schema never silently drops data.
+	rows, err := db.Query(`SELECT id, name, english_name, english_translation, revelation_type
+	                       FROM surahs ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -101,18 +113,38 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 
 	for rows.Next() {
 		var id int
-		var name string
-		if err := rows.Scan(&id, &name); err != nil {
+		var name, nameLatin, engTrans, revType string
+		// english_name and english_translation and revelation_type
+		// are nullable in the DB schema (some rows may be empty).
+		// Use sql.NullString to scan them safely.
+		var (
+			nl   sql.NullString
+			etr  sql.NullString
+			rt   sql.NullString
+		)
+		if err := rows.Scan(&id, &name, &nl, &etr, &rt); err != nil {
 			return nil, err
 		}
 		if id < 1 || id > 114 {
 			continue
 		}
+		if nl.Valid {
+			nameLatin = nl.String
+		}
+		if etr.Valid {
+			engTrans = etr.String
+		}
+		if rt.Valid {
+			revType = rt.String
+		}
 		q.Meta.SurahNames[id-1] = name
 		q.Surahs[id] = &types.Surah{
-			Number: id,
-			Name:   name,
-			Ayahs:  make(map[int]*types.Ayah),
+			Number:             id,
+			Name:               name,
+			NameLatin:          nameLatin,
+			RevelationType:     revType,
+			EnglishTranslation: engTrans,
+			Ayahs:              make(map[int]*types.Ayah),
 		}
 	}
 	if err := rows.Err(); err != nil {

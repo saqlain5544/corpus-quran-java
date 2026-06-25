@@ -1,7 +1,6 @@
 package server
 
 import (
-	"embed"
 	"errors"
 	"io"
 	"io/fs"
@@ -9,11 +8,11 @@ import (
 
 // subRoot wraps an fs.FS produced by fs.Sub, adding the ReadFile and
 // ReadDir methods that fs.Sub strips off. embed.FS provides those
-// natively on the parent, so the wrapper forwards back to embed.FS
+// natively on the parent, so the wrapper forwards back to the parent
 // via Open() + reading the returned file.
 //
-// Most callers in production use embed.FS directly (no wrapping
-// needed). Tests use this wrapper to bridge fs.Sub into Options.
+// Production uses embed.FS directly (no wrapping needed). Tests use
+// this wrapper to bridge fs.Sub into Options.
 type subRoot struct {
 	fsys fs.FS
 }
@@ -63,30 +62,4 @@ func readAll(f fs.File) ([]byte, error) {
 			return buf, err
 		}
 	}
-}
-
-// asSub adapts an embed.FS so that the requested subdir appears as
-// its root, exposing ReadFile/ReadDir/Open methods with the prefix
-// stripped. Used by tests so the testdata layout (testdata/static,
-// testdata/fonts) can be loaded as if it were the production layout
-// (static, fonts).
-type subFS struct {
-	root   embed.FS
-	prefix string
-}
-
-func asSub(parent embed.FS, prefix string) *subFS {
-	return &subFS{root: parent, prefix: prefix}
-}
-
-func (s *subFS) ReadFile(name string) ([]byte, error) {
-	return s.root.ReadFile(s.prefix + "/" + name)
-}
-
-func (s *subFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	return s.root.ReadDir(s.prefix + "/" + name)
-}
-
-func (s *subFS) Open(name string) (fs.File, error) {
-	return s.root.Open(s.prefix + "/" + name)
 }

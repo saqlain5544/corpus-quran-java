@@ -84,12 +84,29 @@
         html += '<div class="ssp-seg">';
         html += '<span class="ssp-seg-text" lang="ar" dir="rtl">' +
           esc(s.SegmentedWord || s.Word) + '</span> ';
+        // Primary row: MorphType · MorphTag · SyntacticRole · CaseMood
         var bits = [];
         if (s.MorphType) bits.push(s.MorphType);
         if (s.MorphTag) bits.push(s.MorphTag);
         if (s.SyntacticRole) bits.push(s.SyntacticRole);
         if (s.CaseMood) bits.push(s.CaseMood);
+        if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) {
+          bits.push(s.CaseMoodMarker);
+        }
         html += '<span class="ssp-seg-tags">' + esc(bits.join(' · ')) + '</span>';
+        // Secondary row: phrase context + declension state — only
+        // when the values are present so we don't pollute the panel
+        // with empty fields.
+        var phraseBits = [];
+        if (s.Phrase) phraseBits.push(s.Phrase);
+        if (s.PhrasalFunction) phraseBits.push(s.PhrasalFunction);
+        if (s.InvariableDeclinable) phraseBits.push(s.InvariableDeclinable);
+        if (s.PossessiveConstruct && s.PossessiveConstruct !== "NOT_CONSTRUCT") {
+          phraseBits.push(s.PossessiveConstruct);
+        }
+        if (phraseBits.length) {
+          html += '<span class="ssp-seg-aux">' + esc(phraseBits.join(' · ')) + '</span>';
+        }
         html += '</div>';
       }
       html += '</div>';

@@ -95,9 +95,7 @@ func main() {
 		loadWg           sync.WaitGroup
 		transErr, conErr error
 	)
-	loadWg.Add(2)
-	go func() {
-		defer loadWg.Done()
+	loadWg.Go(func() {
 		if *transDir == "" {
 			return
 		}
@@ -107,9 +105,8 @@ func main() {
 			return
 		}
 		translations = t
-	}()
-	go func() {
-		defer loadWg.Done()
+	})
+	loadWg.Go(func() {
 		conPath := "./data/morphology/concordance.jsonl"
 		c, err := data.LoadConcordance(conPath)
 		if err != nil {
@@ -117,7 +114,7 @@ func main() {
 			return
 		}
 		concordance = c
-	}()
+	})
 	loadWg.Wait()
 	if transErr != nil {
 		logger.Warn("load translations", "err", transErr)

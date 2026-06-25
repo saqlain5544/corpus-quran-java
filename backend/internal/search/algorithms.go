@@ -1,9 +1,10 @@
 package search
 
 import (
+	"cmp"
 	"encoding/gob"
 	"os"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -62,17 +63,13 @@ func Arabic(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filter
 		all = append(all, r)
 		_ = k
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Score != all[j].Score {
-			return all[i].Score < all[j].Score
-		}
-		if all[i].Surah != all[j].Surah {
-			return all[i].Surah < all[j].Surah
-		}
-		if all[i].Ayah != all[j].Ayah {
-			return all[i].Ayah < all[j].Ayah
-		}
-		return all[i].Word < all[j].Word
+	slices.SortFunc(all, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Surah, b.Surah),
+			cmp.Compare(a.Ayah, b.Ayah),
+			cmp.Compare(a.Word, b.Word),
+		)
 	})
 	if len(all) > limit {
 		all = all[:limit]
@@ -163,14 +160,12 @@ func English(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filte
 		c.VerseText = verseText(quran, c.Surah, c.Ayah)
 		all = append(all, c)
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Score != all[j].Score {
-			return all[i].Score < all[j].Score
-		}
-		if all[i].Surah != all[j].Surah {
-			return all[i].Surah < all[j].Surah
-		}
-		return all[i].Ayah < all[j].Ayah
+	slices.SortFunc(all, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Surah, b.Surah),
+			cmp.Compare(a.Ayah, b.Ayah),
+		)
 	})
 	if len(all) > limit {
 		all = all[:limit]
@@ -237,17 +232,13 @@ func Lemma(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterS
 		all = append(all, r)
 		_ = k
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Score != all[j].Score {
-			return all[i].Score < all[j].Score
-		}
-		if all[i].Surah != all[j].Surah {
-			return all[i].Surah < all[j].Surah
-		}
-		if all[i].Ayah != all[j].Ayah {
-			return all[i].Ayah < all[j].Ayah
-		}
-		return all[i].Word < all[j].Word
+	slices.SortFunc(all, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Surah, b.Surah),
+			cmp.Compare(a.Ayah, b.Ayah),
+			cmp.Compare(a.Word, b.Word),
+		)
 	})
 	if len(all) > limit {
 		all = all[:limit]
@@ -373,14 +364,12 @@ func Translation(q string, m *types.MasaqIndex, quran *types.Quran, limit int, f
 		c.VerseText = verseText(quran, c.Surah, c.Ayah)
 		all = append(all, c)
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Score != all[j].Score {
-			return all[i].Score < all[j].Score
-		}
-		if all[i].Surah != all[j].Surah {
-			return all[i].Surah < all[j].Surah
-		}
-		return all[i].Ayah < all[j].Ayah
+	slices.SortFunc(all, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Surah, b.Surah),
+			cmp.Compare(a.Ayah, b.Ayah),
+		)
 	})
 	if len(all) > limit {
 		all = all[:limit]
@@ -445,11 +434,11 @@ func Root(q string, r *types.RootsIndex, quran *types.Quran, limit int) []Search
 			Score: 1000 - e.Occurrences,
 		})
 	}
-	sort.Slice(all, func(i, j int) bool {
-		if all[i].Score != all[j].Score {
-			return all[i].Score < all[j].Score
-		}
-		return all[i].Root < all[j].Root
+	slices.SortFunc(all, func(a, b SearchResult) int {
+		return cmp.Or(
+			cmp.Compare(a.Score, b.Score),
+			cmp.Compare(a.Root, b.Root),
+		)
 	})
 	if len(all) > limit {
 		all = all[:limit]
@@ -482,18 +471,19 @@ func RootsList(r *types.RootsIndex, page, pageSize int, asc bool, filterSurah in
 		}
 		keys = append(keys, k)
 	}
-	sort.Slice(keys, func(i, j int) bool {
-		a, b := r.ByRoot[keys[i]].Occurrences, r.ByRoot[keys[j]].Occurrences
+	// Modern sort: cmp.Or + cmp.Compare. Two-level key — primary by
+	// frequency (ascending or descending depending on user toggle),
+	// secondary by Buckwalter name for stable, deterministic order
+	// when two roots share the same frequency.
+	slices.SortFunc(keys, func(a, b string) int {
+		fa, fb := r.ByRoot[a].Occurrences, r.ByRoot[b].Occurrences
+		var cmpOcc int
 		if asc {
-			if a != b {
-				return a < b
-			}
+			cmpOcc = cmp.Compare(fa, fb)
 		} else {
-			if a != b {
-				return a > b
-			}
+			cmpOcc = cmp.Compare(fb, fa)
 		}
-		return keys[i] < keys[j]
+		return cmp.Or(cmpOcc, cmp.Compare(a, b))
 	})
 	total := len(keys)
 	start := (page - 1) * pageSize
@@ -581,11 +571,11 @@ func OccurrencesForRoot(root string, r *types.RootsIndex, q *types.Quran, filter
 	if asc {
 		// Reverse the natural (surah-ascending) order so the most
 		// recent occurrences appear first.
-		sort.SliceStable(out, func(i, j int) bool {
-			if out[i].Surah != out[j].Surah {
-				return out[i].Surah > out[j].Surah
-			}
-			return out[i].Ayah > out[j].Ayah
+		slices.SortStableFunc(out, func(a, b SearchResult) int {
+			return cmp.Or(
+				cmp.Compare(b.Surah, a.Surah),
+				cmp.Compare(b.Ayah, a.Ayah),
+			)
 		})
 	}
 	// Default (asc=false): preserve the natural surah-ascending order

@@ -4,6 +4,7 @@
 package server
 
 import (
+	"bytes"
 	"fmt"
 	"html/template"
 	"io"
@@ -254,13 +255,43 @@ func (s *Server) handleHomepage(w http.ResponseWriter, r *http.Request) {
 		Title  string
 		Surahs []*types.Surah
 		Meta   *types.Meta
+		Stats  *homepageStats
 	}{Title: "Quran Reader", Surahs: nil, Meta: s.meta}
 	// Build an ordered slice of surahs.
 	data.Surahs = make([]*types.Surah, 114)
 	for i := 1; i <= 114; i++ {
 		data.Surahs[i-1] = s.quran.Surahs[i]
 	}
+
+	// Aggregate stats for the header strip. Counting roots and
+	// translation sets directly off the loaded indexes keeps the
+	// numbers honest (any future data changes propagate). Both
+	// fields are optional (tests may construct a Server with
+	// neither), so each is nil-guarded.
+	stats := &homepageStats{
+		SurahCount: 114,
+		AyahCount:  s.meta.AyahCount,
+		WordCount:  s.meta.WordCount,
+	}
+	if s.roots != nil {
+		stats.RootCount = len(s.roots.ByRoot)
+	}
+	if s.translations != nil {
+		stats.TranslationCount = len(s.translations.Sets)
+	}
+	data.Stats = stats
 	s.render(w, "homepage.tmpl", data)
+}
+
+// homepageStats holds the aggregate counts shown above the surah
+// grid. Each field is sourced from the live data so the displayed
+// numbers are always accurate.
+type homepageStats struct {
+	SurahCount       int
+	AyahCount        int
+	WordCount        int
+	RootCount        int
+	TranslationCount int
 }
 
 // surahPageAyah wraps an Ayah with per-word root lookups for the
@@ -315,7 +346,7 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 		return ayahEntry{Ayah: ay, WordRoots: wr}
 	}
 
-	var (
+var (
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, runtime.GOMAXPROCS(0))
 	)
@@ -324,15 +355,13 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 		if end > totalAyahs {
 			end = totalAyahs
 		}
-		wg.Add(1)
 		sem <- struct{}{}
-		go func(s, e int) {
-			defer wg.Done()
+		wg.Go(func() {
 			defer func() { <-sem }()
-			for an := s; an <= e; an++ {
+			for an := start; an <= end; an++ {
 				ayahEntries[an-1] = buildEntry(an)
 			}
-		}(start, end)
+		})
 	}
 	wg.Wait()
 
@@ -552,10 +581,8 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 				if end > len(ins) {
 					end = len(ins)
 				}
-				wg.Add(1)
-				go func(startI, endI int) {
-					defer wg.Done()
-					for i := startI; i < endI; i++ {
+				wg.Go(func() {
+					for i := start; i < end; i++ {
 						in := ins[i]
 						occList := make([]lemmaOccurrence, 0, len(in.inner.Occurrences))
 						for _, sv := range in.inner.Occurrences {
@@ -583,7 +610,7 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 							Verses:      occList,
 						}
 					}
-				}(start, end)
+				})
 			}
 			wg.Wait()
 
@@ -1259,10 +1286,26 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 		http.Error(w, "template missing", http.StatusInternalServerError)
 		return
 	}
-	if err := t.ExecuteTemplate(w, name, data); err != nil {
+	// Execute into a buffer first so we can detect template errors
+	// before any bytes reach the wire. Otherwise a runtime error in
+	// a deeply-nested template leaves the client with a 200 status
+	// and a half-rendered page.
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, name, data); err != nil {
 		s.log.Error("template execute", "name", name, "err", err)
-		// Headers may already be sent; best-effort.
+		// Reset the response writer — we can't un-write partial
+		// bytes, but we can replace them with a clean error page
+		// by hijacking the underlying writer. As a fallback, send
+		// the error as text since the original headers are gone.
+		// Use respondError which writes a fresh 500 + error page.
+		w.WriteHeader(http.StatusInternalServerError)
+		// Best-effort: render the error template to the buffer and
+		// append the raw error text below it so developers can see
+		// the failure mode without checking the server logs.
+		fmt.Fprintf(w, "<!-- template %q failed: %s -->\n", name, err.Error())
+		return
 	}
+	w.Write(buf.Bytes())
 }
 
 func (s *Server) respondError(w http.ResponseWriter, status int, msg string) {

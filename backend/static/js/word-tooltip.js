@@ -98,11 +98,54 @@
       html += '</div>';
     }
 
-    // ── 6. Grammatical Tags ────────────────────────────────────
+    // ── 6. Phrase + Function ────────────────────────────────────
+    // PHRASE / PRED / SUBJ / etc. — only render when the segment
+    // is part of a phrase. Empty phrase + null phrasal_function
+    // usually means the segment stands alone.
+    const phraseBits = [];
+    for (const s of segs) {
+      if (s.Phrase && s.Phrase.trim()) phraseBits.push(s.Phrase);
+      if (s.PhrasalFunction && s.PhrasalFunction.trim()) {
+        phraseBits.push(s.PhrasalFunction);
+      }
+    }
+    if (phraseBits.length) {
+      html += '<hr class="wt-sep">';
+      html += '<dl class="wt-fields">';
+      html += '<dt>Phrase</dt><dd>' + escape(phraseBits.join(' / ')) + '</dd>';
+      html += '</dl>';
+    }
+
+    // ── 7. Declension state ─────────────────────────────────────
+    // INVAR / DECLN / DEF_ART + construct state. These are
+    // technically grammar tags but they affect how the segment
+    // is parsed downstream (e.g. a construct noun has genitive
+    // case forced).
+    const declBits = [];
+    for (const s of segs) {
+      if (s.InvariableDeclinable) declBits.push(s.InvariableDeclinable);
+      if (s.PossessiveConstruct && s.PossessiveConstruct !== "NOT_CONSTRUCT") {
+        declBits.push(s.PossessiveConstruct);
+      }
+    }
+    if (declBits.length) {
+      html += '<dl class="wt-fields">';
+      html += '<dt>Decl.</dt><dd>' + escape(declBits.join(' / ')) + '</dd>';
+      html += '</dl>';
+    }
+
+    // ── 8. Grammatical Tags ────────────────────────────────────
     const gramBits = [];
     for (const s of segs) {
       if (s.SyntacticRole) gramBits.push(s.SyntacticRole);
       if (s.CaseMood) gramBits.push(s.CaseMood);
+      // The case mood marker is the actual vowel (KASRA/DHAMMA/FATHA)
+      // attached to the word's last letter. Surface it next to the
+      // abstract CaseMood tag so the user can see what sound the
+      // case produces in recitation.
+      if (s.CaseMoodMarker && s.CaseMoodMarker !== s.CaseMood) {
+        gramBits.push(s.CaseMoodMarker);
+      }
     }
     if (gramBits.length || fn) {
       html += '<hr class="wt-sep">';
