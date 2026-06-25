@@ -212,8 +212,16 @@
 	grid-template-columns: 1fr;
 	gap: var(--sp-4);
 }
-/* Side panel: mobile first — positioned as a fixed overlay near the
- * top of the viewport, toggled open by JS on word click. */
+/* ── Side panel: mobile first ──────────────────────────────────
+ * Mobile: positioned as a fixed overlay near the top of the viewport,
+ * toggled open by JS on word click.
+ *
+ * Visual treatment: the panel always reads as *distinct from* the
+ * main surah column. It uses a gold-tinted background (--panel-bg)
+ * and a 3px solid gold left border (--panel-border) so it visually
+ * anchors to the page chrome rather than blending into the main
+ * text. When the .is-open class is added (panel has data loaded),
+ * the border becomes the brighter --accent-strong. */
 .surah-side-panel {
 	display: none;
 	position: fixed;
@@ -221,17 +229,44 @@
 	max-height: calc(100vh - 1rem);
 	overflow-y: auto;
 	overflow-wrap: break-word;
-	background: var(--bg);
+	background: var(--panel-bg);
 	border: var(--border-w) solid var(--rule);
+	border-inline-start: 3px solid var(--panel-border);
 	border-radius: var(--radius-md);
-	padding: var(--sp-3);
+	padding: var(--sp-4) var(--sp-4) var(--sp-4) calc(var(--sp-4) + 3px);
+	box-shadow: 0 2px 12px oklch(0% 0 0 / 0.08);
 	z-index: var(--z-sticky);
 	font-size: var(--fs-sm);
-	line-height: 1.4;
+	line-height: 1.5;
 }
 .surah-side-panel.is-open {
 	display: block;
+	border-inline-start-color: var(--accent);
+	box-shadow: 0 4px 24px oklch(0% 0 0 / 0.12);
 }
+/* Persistent panel header — a tiny "Word analysis" caption that
+ * anchors the panel to its purpose and matches the manuscript gold
+ * accent. */
+.ssp-header {
+	margin: 0 0 var(--sp-3);
+	padding-bottom: var(--sp-2);
+	border-bottom: var(--border-w) solid var(--rule);
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--sp-2);
+}
+.ssp-header-label {
+	font: 600 var(--fs-xs)/1 var(--font-latin);
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--accent);
+}
+.ssp-header-hint {
+	font: var(--fs-xs)/1 var(--font-latin);
+	color: var(--ink-soft);
+}
+
 .ssp-empty,
 .ssp-loading {
 	color: var(--ink-soft);
@@ -395,8 +430,7 @@
 		max-height: calc(100vh - 10rem);
 		overflow-y: auto;
 		overflow-wrap: break-word;
-		padding: var(--sp-2);
-		z-index: var(--z-sticky);
+		padding: var(--sp-3) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 3px);
 	}
 	.surah-side-panel.is-open {
 		display: block;

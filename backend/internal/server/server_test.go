@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -753,6 +754,98 @@ func TestSurfacesCSSAsset(t *testing.T) {
 	} {
 		if !strings.Contains(body, sel) {
 			t.Errorf("surfaces.css missing selector %q", sel)
+		}
+	}
+}
+
+// ── oklch accent + panel highlight ─────────────────────────────
+//
+// Gold accent in CSS Color 4 oklch() — the perceptually-uniform
+// color space — gives us a manuscript-ink palette that holds its
+// hue across lightness/chroma tweaks. The surah side panel is a
+// "live" surface (it appears on word click) and uses gold-tinted
+// background + gold border to read as distinct from the main
+// surah column.
+
+func TestTokensCSSUsesOklchAccent(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/static/css/tokens.css", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("tokens.css status = %d", w.Code)
+	}
+	body := w.Body.String()
+
+	// Accent must be gold-ish: oklch hue in the yellow range (60–95).
+	// Match the literal "--accent:" assignment line and verify its
+	// oklch() hue falls in [60, 95] for the light theme.
+	m := regexp.MustCompile(`--accent:\s*oklch\(\s*([\d.]+)%\s+([\d.]+)\s+([\d.]+)\s*\)`)
+	matches := m.FindAllStringSubmatch(body, -1)
+	if len(matches) < 2 {
+		t.Fatalf("tokens.css: expected ≥2 --accent: oklch() declarations (light + dark), got %d", len(matches))
+	}
+	for _, mm := range matches {
+		hue, _ := strconv.ParseFloat(mm[3], 64)
+		if hue < 60 || hue > 95 {
+			t.Errorf("--accent oklch hue = %.1f° — expected gold (60-95°), got %s", hue, mm[0])
+		}
+	}
+
+	// The panel-bg token must also be oklch (panel tinting).
+	if !strings.Contains(body, "--panel-bg:") {
+		t.Error("tokens.css missing --panel-bg token")
+	}
+	if !strings.Contains(body, "--panel-border:") {
+		t.Error("tokens.css missing --panel-border token")
+	}
+}
+
+func TestSidePanelHeader(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/2", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `<aside class="surah-side-panel"`) {
+		t.Error("surah page missing side-panel aside")
+	}
+	if !strings.Contains(body, `class="ssp-header"`) {
+		t.Error("side panel missing ssp-header — the gold accent label that anchors the panel to its purpose")
+	}
+	if !strings.Contains(body, `class="ssp-header-label"`) {
+		t.Error("side panel header missing ssp-header-label")
+	}
+	if !strings.Contains(body, `>Word analysis<`) {
+		t.Error("side panel header label text is not 'Word analysis'")
+	}
+}
+
+func TestSidePanelHighlightStyling(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/static/css/quran.css", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("quran.css status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// Side panel must declare its distinguishing visual treatment
+	// via the panel-bg / panel-border tokens. If someone removes
+	// the gold-tinted background or the gold border, the panel
+	// will blend back into the main column and this test fires.
+	for _, sel := range []string{
+		".surah-side-panel",
+		"var(--panel-bg)",
+		"var(--panel-border)",
+		"border-inline-start",
+		"box-shadow",
+	} {
+		if !strings.Contains(body, sel) {
+			t.Errorf("quran.css side-panel missing %q — the panel won't read as highlighted", sel)
 		}
 	}
 }
