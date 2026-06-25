@@ -53,3 +53,26 @@ __pycache__/
 
 # Working copy of surahs-html — regenerate by copying
 quran-html/
+
+# ─── Quran Reader App ───────────────────────────────────────────
+
+# Compiled Go binaries — rebuild with `go build -o bin/quranreader ./backend`
+bin/
+
+# Pre-built SQLite DBs and backups — rebuild with pipeline/build
+data/processed/*.gob
+data/processed/*.db
+data/new/*.db
+data/new/*.db.bak
+data/new/*.db-journal
+data/new/*.xml
+data/new/*.sql
+
+# Raw input data — large, regenerable from upstream sources
+data/useless/
+data/morphology/*.csv.bak
+data/morphology/*.zip
+data/morphology/scripts/__pycache__/
+
+# Next.js reader (deleted, git-tracked leftovers)
+quran-reader/
