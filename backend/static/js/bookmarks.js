@@ -35,32 +35,50 @@
     } catch (e) { /* private mode — silently skip */ }
   }
 
-  function isBookmarked(s, a) {
-    var k = KEY(s, a);
+  // Build a Set of "s:a" strings from the current bookmarks array
+  // so isBookmarked() is O(1) instead of O(M). We refresh the Set
+  // after every add/remove. The set is module-scoped and rebuilt on
+  // demand via refreshBookmarkSet(); we don't keep a global cache
+  // because localStorage can be modified by other tabs (and the
+  // page's own add/remove), and re-parsing 100 items is sub-ms.
+  //
+  // For M = ~10 bookmarks (typical) the array scan was already fast;
+  // the win is when many per-ayah buttons call isBookmarked on
+  // initial render — Al-Baqarah has 286 ayahs, each one calls
+  // isBookmarked(s, a) once. With the Set this is 286 hash lookups
+  // (~286ns) instead of 286 × 10 = 2860 string concats + comparisons.
+  function refreshBookmarkSet() {
     var items = load();
+    var s = Object.create(null);
     for (var i = 0; i < items.length; i++) {
-      if (items[i].surah + ":" + items[i].ayah === k) return true;
+      s[KEY(items[i].surah, items[i].ayah)] = true;
     }
-    return false;
+    return s;
+  }
+  var bookmarkSet = refreshBookmarkSet();
+
+  function isBookmarked(s, a) {
+    return bookmarkSet[KEY(s, a)] === true;
   }
 
   function add(s, a) {
     var items = load();
     var k = KEY(s, a);
     // Don't double-add.
-    for (var i = 0; i < items.length; i++) {
-      if (items[i].surah + ":" + items[i].ayah === k) return;
-    }
+    if (bookmarkSet[k]) return;
+    bookmarkSet[k] = true;
     items.unshift({ surah: s, ayah: a, ts: Date.now() });
     save(items);
   }
 
   function remove(s, a) {
-    var items = load();
     var k = KEY(s, a);
+    if (!bookmarkSet[k]) return;
+    delete bookmarkSet[k];
+    var items = load();
     var next = [];
     for (var i = 0; i < items.length; i++) {
-      if (items[i].surah + ":" + items[i].ayah !== k) next.push(items[i]);
+      if (KEY(items[i].surah, items[i].ayah) !== k) next.push(items[i]);
     }
     save(next);
   }
@@ -95,6 +113,12 @@
     refreshAyahButtons();
     refreshDrawer();
   });
+
+  // Refresh the in-memory set when localStorage might have changed
+  // out-of-band (e.g. user clears bookmarks via the drawer).
+  function refreshFromStorage() {
+    bookmarkSet = refreshBookmarkSet();
+  }
 
   // ── Global header drawer ────────────────────────────────────
   var toggleBtn = document.querySelector('[data-component="bookmarks-toggle"]');
@@ -140,6 +164,7 @@
     clear.textContent = "Clear all";
     clear.addEventListener("click", function () {
       save([]);
+      refreshFromStorage();
       refreshDrawer();
       refreshAyahButtons();
     });

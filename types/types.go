@@ -29,6 +29,14 @@ type Ayah struct {
 	Number int
 	Text   string
 	Tokens []Token
+	// SearchText is a pre-normalized lowercased version of the
+	// visible text (whitespace collapsed), used as the local
+	// search cache on the surah page. Populated by the data
+	// loader so the page renders with the cache already set —
+	// no JS back-fill pass, no FOUC. Empty if the loader hasn't
+	// populated it (older pages without the optimisation will
+	// have their JS back-fill from textContent).
+	SearchText string
 }
 
 // Token is one element of an ayah's tokenized form.

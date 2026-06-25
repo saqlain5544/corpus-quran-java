@@ -189,7 +189,12 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 		if s == nil {
 			continue
 		}
-		s.Ayahs[vn] = &types.Ayah{Number: vn, Text: text}
+		// SearchText: pre-normalized (lowercased, whitespace collapsed)
+		// visible text. Used as the local-search cache on the surah
+		// page (surah-header.js reads .dataset.searchText instead of
+		// .textContent on every submit).
+		searchText := strings.ToLower(strings.Join(strings.Fields(text), " "))
+		s.Ayahs[vn] = &types.Ayah{Number: vn, Text: text, SearchText: searchText}
 	}
 	if err := vrows.Err(); err != nil {
 		return nil, err

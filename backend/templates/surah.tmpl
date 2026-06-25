@@ -83,7 +83,15 @@
       {{$lastWordNo := 0}}
       {{range $t := $ae.Ayah.Tokens}}{{if eq $t.Kind "word"}}{{if gt $t.WordNo $lastWordNo}}{{$lastWordNo = $t.WordNo}}{{end}}{{end}}{{end}}
 
-      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}">
+      {{/*
+        data-search-text is the pre-computed normalized text for
+        the local in-page search (surah-header.js). The hot loop
+        reads this attribute instead of textContent on every
+        submit, which means no DOM traversal per ayah per search.
+        We populate it server-side so the cache is ready on first
+        paint — no FOUC, no JS back-fill pass.
+      */}}
+      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}" data-search-text="{{$ae.Ayah.SearchText}}">
         <button type="button" class="ayah-bookmark" data-component="ayah-bookmark"
                 data-surah="{{$.Surah.Number}}" data-ayah="{{$an}}"
                 aria-label="Bookmark verse {{$an}}" title="Bookmark">☆</button>
