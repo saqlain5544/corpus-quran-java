@@ -69,6 +69,7 @@
   // Hook here only for future enhancements (autocomplete dropdown).
 
   // Note: verse-scroll.js handles the scroll-to-verse behavior on
-  // /surah/{id}/{verse} URLs (it looks for either a URL hash or the
-  // .ayah-focus class the server applies).
+  // /surah/{id} URLs with a #verse-N hash. It adds the .ayah-focus
+  // class client-side before smooth-scrolling, then strips it after
+  // a 2.5s delay so the highlight fades out.
 })();
