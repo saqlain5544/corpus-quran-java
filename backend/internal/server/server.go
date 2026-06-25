@@ -316,8 +316,8 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var (
-		wg   sync.WaitGroup
-		sem  = make(chan struct{}, runtime.GOMAXPROCS(0))
+		wg  sync.WaitGroup
+		sem = make(chan struct{}, runtime.GOMAXPROCS(0))
 	)
 	for start := 1; start <= totalAyahs; start += chunkSize {
 		end := start + chunkSize - 1
@@ -510,36 +510,84 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 	var conLemmas []concordLemma
 	if s.concordance != nil {
 		if ce, ok := s.concordance.ByRoot[root]; ok {
+			// Pre-resolve the active translation set once. We use
+			// it inside the parallel worker below; reading it per
+			// lemma would require either locking or making a copy.
+			var trans *data.TranslationSet
+			if s.translations != nil && s.translations.Default < len(s.translations.Sets) {
+				trans = &s.translations.Sets[s.translations.Default]
+			}
+
+			// Snapshot the concordance lemmas: each lemma maps an
+			// Arabic letter to (total occurrences, []verse refs).
+			// Build a parallel-safe input slice — anonymous structs
+			// can't be named, so we use a local alias type.
+			type lemmaInner struct {
+				TotalOccurrences int
+				Occurrences      []string
+			}
+			type lemmaInput struct {
+				arabic string
+				inner  lemmaInner
+			}
+			ins := make([]lemmaInput, 0, len(ce.Lemmas))
 			for ar, lm := range ce.Lemmas {
-				occList := make([]lemmaOccurrence, 0, len(lm.Occurrences))
-				for _, sv := range lm.Occurrences {
-					parts := strings.SplitN(sv, ":", 2)
-					if len(parts) != 2 {
-						continue
-					}
-					sNum, _ := strconv.Atoi(parts[0])
-					vNum, _ := strconv.Atoi(parts[1])
-					lo := lemmaOccurrence{
-						Ref:       sv,
-						Link:      fmt.Sprintf("/surah/%d#verse-%d", sNum, vNum),
-						VerseText: verseTextSafe(s.quran, sNum, vNum),
-					}
-					// Add translation if available
-					if s.translations != nil && s.translations.Default < len(s.translations.Sets) {
-						if set := s.translations.Sets[s.translations.Default]; set.Data != nil {
-							if ay, ok := set.Data[sNum]; ok {
-								lo.Translation = ay[vNum]
+				ins = append(ins, lemmaInput{arabic: ar, inner: lemmaInner{
+					TotalOccurrences: lm.TotalOccurrences,
+					Occurrences:      lm.Occurrences,
+				}})
+			}
+
+			// Build each lemma in parallel. Lemmas are independent —
+			// each reads from the read-only ByRoot map and writes
+			// into a uniquely-indexed slot of `outs`, so there's no
+			// shared mutable state across goroutines. The chunk size
+			// keeps the goroutine count bounded on roots with many
+			// lemmas (most roots have 5-50).
+			outs := make([]concordLemma, len(ins))
+			const lemmaChunk = 4
+			var wg sync.WaitGroup
+			for start := 0; start < len(ins); start += lemmaChunk {
+				end := start + lemmaChunk
+				if end > len(ins) {
+					end = len(ins)
+				}
+				wg.Add(1)
+				go func(startI, endI int) {
+					defer wg.Done()
+					for i := startI; i < endI; i++ {
+						in := ins[i]
+						occList := make([]lemmaOccurrence, 0, len(in.inner.Occurrences))
+						for _, sv := range in.inner.Occurrences {
+							parts := strings.SplitN(sv, ":", 2)
+							if len(parts) != 2 {
+								continue
 							}
+							sNum, _ := strconv.Atoi(parts[0])
+							vNum, _ := strconv.Atoi(parts[1])
+							lo := lemmaOccurrence{
+								Ref:       sv,
+								Link:      fmt.Sprintf("/surah/%d#verse-%d", sNum, vNum),
+								VerseText: verseTextSafe(s.quran, sNum, vNum),
+							}
+							if trans != nil && trans.Data != nil {
+								if ay, ok := trans.Data[sNum]; ok {
+									lo.Translation = ay[vNum]
+								}
+							}
+							occList = append(occList, lo)
+						}
+						outs[i] = concordLemma{
+							Arabic:      in.arabic,
+							Occurrences: in.inner.TotalOccurrences,
+							Verses:      occList,
 						}
 					}
-					occList = append(occList, lo)
-				}
-				conLemmas = append(conLemmas, concordLemma{
-					Arabic:      ar,
-					Occurrences: lm.TotalOccurrences,
-					Verses:      occList,
-				})
+				}(start, end)
 			}
+			wg.Wait()
+
+			conLemmas = outs
 			// Sort lemmas by occurrence count descending
 			sort.Slice(conLemmas, func(i, j int) bool {
 				return conLemmas[i].Occurrences > conLemmas[j].Occurrences

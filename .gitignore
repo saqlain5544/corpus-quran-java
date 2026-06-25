@@ -60,8 +60,7 @@ quran-html/
 bin/
 
 # Pre-built SQLite DBs and backups — rebuild with pipeline/build
-data/processed/*.gob
-data/processed/*.db
+data/processed/
 data/new/*.db
 data/new/*.db.bak
 data/new/*.db-journal

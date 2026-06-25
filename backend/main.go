@@ -90,9 +90,9 @@ func main() {
 	// running them concurrently shaves noticeable time off startup
 	// when the disk cache is cold.
 	var (
-		translations  *data.Translations
-		concordance   *data.Concordance
-		loadWg        sync.WaitGroup
+		translations     *data.Translations
+		concordance      *data.Concordance
+		loadWg           sync.WaitGroup
 		transErr, conErr error
 	)
 	loadWg.Add(2)

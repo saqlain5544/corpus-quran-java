@@ -470,3 +470,178 @@ func TestContextServer(t *testing.T) {
 
 // silence unused warnings if strconv isn't otherwise referenced.
 var _ = strconv.Itoa
+
+// ── Structural CSS vocabulary ────────────────────────────────────
+//
+// These tests guard against accidental removal of the surfaces.css
+// vocabulary from the page templates. They are intentionally
+// "shape" tests (looking for class names) rather than full snapshot
+// comparisons — that way cosmetic markup changes don't break the
+// suite, but a refactor that drops the layout/surface primitives
+// will fail loudly.
+
+func TestStructuralClasses_Homepage(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	must := []string{
+		`class="layout-header"`,         // page-level header
+		`class="surface surface--bare"`, // card list lives on a bare surface
+		`<ol class="surah-grid">`,
+	}
+	for _, m := range must {
+		if !strings.Contains(body, m) {
+			t.Errorf("homepage missing %q", m)
+		}
+	}
+}
+
+func TestStructuralClasses_RootDetail(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/root/detailed/qwl", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	must := []string{
+		`class="layout-shell layout-shell--two-col"`,
+		`class="layout-aside layout-aside--sticky stack"`,
+		// Both columns must use surfaces; the aside stacks distribution +
+		// concordance lemmas.
+		`class="surface stack"`,
+	}
+	for _, m := range must {
+		if !strings.Contains(body, m) {
+			t.Errorf("root detail missing %q", m)
+		}
+	}
+}
+
+func TestStructuralClasses_Search(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/search?q=allah&type=english", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `class="layout-header"`) {
+		t.Error("search page missing layout-header")
+	}
+	if !strings.Contains(body, `measure-wide`) {
+		t.Error("search page missing measure-wide")
+	}
+	// Results, if present, must be wrapped in a surface.
+	if strings.Contains(body, `<ol class="search-results">`) &&
+		!strings.Contains(body, `<ol class="search-results surface">`) {
+		t.Error("search-results <ol> should carry class=\"surface\"")
+	}
+}
+
+func TestStructuralClasses_About(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/about", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// measure-base appears on the page wrapper, not standalone.
+	if !strings.Contains(body, `measure-base`) {
+		t.Error("about page missing measure-base constraint")
+	}
+	// Each section on the about page should be a surface.
+	count := strings.Count(body, `<section class="surface`)
+	if count < 3 {
+		t.Errorf("about page: expected ≥3 surface sections, got %d", count)
+	}
+}
+
+func TestStructuralClasses_RootsList(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/roots", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `layout-header-actions`) {
+		t.Error("roots list missing layout-header-actions")
+	}
+	if !strings.Contains(body, `class="cluster"`) {
+		t.Error("roots list controls not in a cluster")
+	}
+}
+
+func TestStructuralClasses_Surah(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/1", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("status = %d", w.Code)
+	}
+	body := w.Body.String()
+	// Bismillah must be on a surface--bare.
+	if !strings.Contains(body, `class="bismillah surface surface--bare"`) {
+		t.Error("surah page: bismillah should carry surface surface--bare")
+	}
+	// Each ayah section must be a bare surface (no chrome, just spacing).
+	if !strings.Contains(body, `class="ayah surface surface--bare"`) {
+		t.Error("surah page: ayah should carry surface surface--bare")
+	}
+}
+
+func TestStructuralClasses_Error(t *testing.T) {
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/surah/115", nil) // invalid -> 404
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 404 {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `class="error-page surface surface--elev measure-narrow"`) {
+		t.Error("error page must be a narrow elevated surface")
+	}
+}
+
+func TestSurfacesCSSAsset(t *testing.T) {
+	// The structural vocabulary lives in backend/static/css/surfaces.css
+	// and is referenced from the layout's <link>. Confirm both that
+	// the asset is served and that it contains the vocabulary.
+	srv := testServer(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest("GET", "/static/css/surfaces.css", nil)
+	srv.Handler().ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("surfaces.css status = %d", w.Code)
+	}
+	body := w.Body.String()
+	for _, sel := range []string{
+		".surface",
+		".surface--sunken",
+		".surface--elev",
+		".surface--bare",
+		".stack",
+		".cluster",
+		".layout-shell--two-col",
+		".layout-header",
+		".layout-aside--sticky",
+		".measure-narrow",
+	} {
+		if !strings.Contains(body, sel) {
+			t.Errorf("surfaces.css missing selector %q", sel)
+		}
+	}
+}

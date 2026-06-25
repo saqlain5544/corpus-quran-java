@@ -34,8 +34,8 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 	defer db.Close()
 
 	type qResult struct {
-		q     *types.Quran
-		err   error
+		q   *types.Quran
+		err error
 	}
 	type mResult struct {
 		m   *types.MasaqIndex
@@ -47,13 +47,13 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 	}
 
 	var (
-		wg          sync.WaitGroup
-		qCh         = make(chan qResult, 1)
-		mCh         = make(chan mResult, 1)
-		rCh         = make(chan rResult, 1)
-		startQuran  = func() { wg.Add(1); go func() { defer wg.Done(); q, e := loadQuranFromDB(db); qCh <- qResult{q, e} }() }
-		startMasaq  = func() { wg.Add(1); go func() { defer wg.Done(); m, e := loadMasaqFromDB(db); mCh <- mResult{m, e} }() }
-		startRoots  = func() { wg.Add(1); go func() { defer wg.Done(); r, e := loadRootsFromDB(db); rCh <- rResult{r, e} }() }
+		wg         sync.WaitGroup
+		qCh        = make(chan qResult, 1)
+		mCh        = make(chan mResult, 1)
+		rCh        = make(chan rResult, 1)
+		startQuran = func() { wg.Add(1); go func() { defer wg.Done(); q, e := loadQuranFromDB(db); qCh <- qResult{q, e} }() }
+		startMasaq = func() { wg.Add(1); go func() { defer wg.Done(); m, e := loadMasaqFromDB(db); mCh <- mResult{m, e} }() }
+		startRoots = func() { wg.Add(1); go func() { defer wg.Done(); r, e := loadRootsFromDB(db); rCh <- rResult{r, e} }() }
 	)
 
 	startQuran()
