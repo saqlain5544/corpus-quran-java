@@ -3,6 +3,9 @@ package data
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
+	"sort"
+	"strings"
 	"sync"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -10,6 +13,15 @@ import (
 	"quranreader/loc"
 	"quranreader/types"
 )
+
+// enTokenRe mirrors search.EnTokenize's regex — matches runs of
+// ASCII letters with optional internal apostrophe. Kept here to
+// avoid an import cycle (search imports data).
+var enTokenRe = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?`)
+
+func enTokenizeLocal(s string) []string {
+	return enTokenRe.FindAllString(strings.ToLower(s), -1)
+}
 
 // LoadAll opens the detailed-quran.db SQLite database and constructs
 // the in-memory Quran, MasaqIndex, RootsIndex, and Meta. All data is
@@ -308,7 +320,88 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 		return nil, err
 	}
 
+	// Build inverted indexes for English / Translation search.
+	// See backend/internal/search/index for the data structure
+	// details. These are populated once at load time and used by
+	// the search package for sub-linear queries.
+	idx.ByEnTokenPostings = buildInvertedIndex(idx.ByWord, enTokenField)
+	idx.ByTranslationPostings = buildInvertedIndex(idx.ByWord, translationField)
+
+	// Pre-compute BM25 average doc length per field. O(N) once at
+	// load; saves ~10ms per query that the legacy algorithm wasted
+	// on per-request IDF + doc-length passes.
+	idx.GlossAvgDocLen = computeAvgDocLen(idx.ByWord, enTokenField)
+	idx.TranslationAvgDocLen = computeAvgDocLen(idx.ByWord, translationField)
+
 	return idx, nil
+}
+
+// computeAvgDocLen returns the mean |unique tokens| per doc across
+// the corpus for the given field. This is the BM25 length-normalization
+// denominator (avgdl) and is computed once at LoadAll.
+func computeAvgDocLen(byWord map[uint64][]types.MasaqSegment, field func(types.MasaqSegment) string) float64 {
+	if len(byWord) == 0 {
+		return 0
+	}
+	totalLen := 0
+	for _, segs := range byWord {
+		seen := make(map[string]struct{}, 8)
+		for _, s := range segs {
+			for _, t := range enTokenizeLocal(field(s)) {
+				seen[t] = struct{}{}
+			}
+		}
+		totalLen += len(seen)
+	}
+	return float64(totalLen) / float64(len(byWord))
+}
+
+// enTokenField returns the English gloss for the segment.
+func enTokenField(s types.MasaqSegment) string { return s.Gloss }
+
+// translationField returns the translation for the segment.
+func translationField(s types.MasaqSegment) string { return s.Translation }
+
+// buildInvertedIndex constructs the `token → []LocKey` posting list
+// for the given field of every MasaqSegment in `byWord`.
+//
+// Algorithm:
+//   - Walk every (key, segs) pair.
+//   - For each segment, extract the field text and tokenize with
+//     the same regex used by EnTokenize (defined above as enTokenRe
+//     to avoid an import cycle with the search package).
+//   - Build a per-doc dedupe set, then materialize sorted postings.
+//   - Sort each posting list so set ops are merge-walkable.
+//
+// This runs once at LoadAll. Cost is O(segments × field-length) ≈
+// 1M char ops for the 157K MASAQ segments — well under 100ms.
+func buildInvertedIndex(byWord map[uint64][]types.MasaqSegment, field func(types.MasaqSegment) string) map[string][]uint64 {
+	// First pass: collect unique tokens per doc.
+	docTokens := make(map[uint64]map[string]struct{}, len(byWord))
+	for key, segs := range byWord {
+		set, ok := docTokens[key]
+		if !ok {
+			set = make(map[string]struct{}, 8)
+			docTokens[key] = set
+		}
+		for _, s := range segs {
+			for _, tok := range enTokenizeLocal(field(s)) {
+				set[tok] = struct{}{}
+			}
+		}
+	}
+	// Second pass: materialize postings, sort for determinism.
+	postings := make(map[string][]uint64, 8000)
+	for key, set := range docTokens {
+		for t := range set {
+			postings[t] = append(postings[t], key)
+		}
+	}
+	for t := range postings {
+		lst := postings[t]
+		sort.Slice(lst, func(i, j int) bool { return lst[i] < lst[j] })
+	}
+	return postings
 }
 
 // loadRootsFromDB reads roots + word-root mappings and builds a

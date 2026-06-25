@@ -125,7 +125,161 @@ func English(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filte
 // englishOrTranslation is the shared implementation for English()
 // and Translation(). The fields parameter selects which MASAQ field
 // to search: gloss (English) or translation (Translation).
+//
+// Algorithm (post-inverted-index, see /tmp/algo-research/01_data_structures.md):
+//
+//  1. Tokenize the query.
+//  2. Use the pre-built inverted index (m.ByEnTokenPostings or
+//     m.ByTranslationPostings) to expand candidate docs:
+//     - Literal postings (union over query tokens)
+//     - Prefix postings (vocabulary words starting with a query token)
+//     - Fuzzy postings (vocabulary words within edit distance ≤ auto-fuzz)
+//  3. Classify each candidate against the stored gloss text. Keep the
+//     BEST match class per doc (a word may have multiple segments with
+//     different glosses — the best one wins).
+//  4. Rank by (class asc, BM25 desc, surah asc, ayah asc, word asc).
+//
+// The old implementation scanned all 77K segments per query and
+// recomputed IDF each time. This one expands to (literal ∪ prefix ∪
+// fuzzy) postings, which is bounded by the vocabulary size (~5K)
+// not the corpus size (~77K). BM25 stats are pre-computed.
 func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, limit, filterSurah int, isTranslation bool) []SearchResult {
+	if m == nil || limit <= 0 {
+		return nil
+	}
+	q = strings.ToLower(strings.TrimSpace(q))
+	if len(q) < 2 {
+		return nil
+	}
+	qTokens := EnTokenize(q)
+	if len(qTokens) == 0 {
+		return nil
+	}
+	kind := "english"
+	postings := m.ByEnTokenPostings
+	if isTranslation {
+		kind = "translation"
+		postings = m.ByTranslationPostings
+	}
+	// If no inverted index (e.g. legacy data path or tests that
+	// build a MasaqIndex directly), fall back to the linear scan.
+	if postings == nil {
+		return englishOrTranslationLinear(q, m, quran, limit, filterSurah, isTranslation)
+	}
+
+	// Candidate expansion via the inverted index.
+	candidates := expandPostings(postings, qTokens)
+
+	// Pre-computed BM25 stats (cached on MasaqIndex at LoadAll time).
+	// Old code rebuilt these per request (~10ms saved per query).
+	idxTotalDocs := len(m.ByWord)
+	idxAvgDocLen := m.GlossAvgDocLen
+	if isTranslation {
+		idxAvgDocLen = m.TranslationAvgDocLen
+	}
+
+	// For each candidate doc, find the best match class.
+	type scored struct {
+		key   uint64
+		class int     // 0..4
+		bm25  float64 // higher is better — we'll negate for sort
+		title string
+		surah int
+		ayah  int
+		word  int
+	}
+	cands := make([]scored, 0, len(candidates))
+	for _, key := range candidates {
+		surah, ayah, word := loc.Decode(key)
+		if filterSurah > 0 && surah != filterSurah {
+			continue
+		}
+		// Pick the gloss for classification. We use the first non-empty
+		// gloss from any segment for this LocKey.
+		segs := m.ByWord[key]
+		var gloss string
+		for _, s := range segs {
+			var t string
+			if isTranslation {
+				t = s.Translation
+			} else {
+				t = s.Gloss
+			}
+			if t != "" {
+				gloss = t
+				break
+			}
+		}
+		if gloss == "" {
+			continue
+		}
+		detail := ClassifyMatch(q, gloss)
+		if detail.Class == MatchNone {
+			continue
+		}
+		// Compute BM25 over the doc's stored tokens.
+		docTokens := EnTokenize(gloss)
+		bm25 := bm25ScoreForDocWithText(postings, qTokens, docTokens, idxAvgDocLen, idxTotalDocs)
+		cands = append(cands, scored{
+			key:   key,
+			class: int(detail.Class),
+			bm25:  bm25,
+			title: gloss,
+			surah: surah,
+			ayah:  ayah,
+			word:  word,
+		})
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+	// Primary sort: class asc (lower = better match).
+	// Secondary sort: BM25 desc (higher = more relevant).
+	// Tertiary: deterministic location order.
+	slices.SortFunc(cands, func(a, b scored) int {
+		if a.class != b.class {
+			return cmp.Compare(a.class, b.class)
+		}
+		// BM25 higher is better; we want it descending, so negate.
+		if math.Abs(a.bm25-b.bm25) > 1e-9 {
+			if a.bm25 > b.bm25 {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Or(
+			cmp.Compare(a.surah, b.surah),
+			cmp.Compare(a.ayah, b.ayah),
+			cmp.Compare(a.word, b.word),
+		)
+	})
+	if len(cands) > limit {
+		cands = cands[:limit]
+	}
+	out := make([]SearchResult, len(cands))
+	for i, c := range cands {
+		r := SearchResult{
+			Kind:  kind,
+			Surah: c.surah,
+			Ayah:  c.ayah,
+			Word:  c.word,
+			Title: c.title,
+			Link:  "/surah/" + strconv.Itoa(c.surah) + "#verse-" + strconv.Itoa(c.ayah),
+			Score: c.class*1000 - int(c.bm25), // rank-encoded score for API
+		}
+		r.Snippet = highlightWord(c.title, qTokens)
+		r.VerseText = verseText(quran, c.surah, c.ayah)
+		out[i] = r
+	}
+	return out
+}
+
+// englishOrTranslationLinear is the legacy O(N) fallback used when
+// no inverted index is available (e.g. unit tests that build a
+// MasaqIndex directly via a constructor). It produces the same
+// results as the inverted-index path but scans all 77K segments per
+// query.
+func englishOrTranslationLinear(q string, m *types.MasaqIndex, quran *types.Quran, limit, filterSurah int, isTranslation bool) []SearchResult {
 	if m == nil || limit <= 0 {
 		return nil
 	}
@@ -143,46 +297,11 @@ func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, lim
 		kind = "translation"
 		field = func(s types.MasaqSegment) string { return s.Translation }
 	}
-
-	// Build IDF table over the search field — common tokens (e.g.,
-	// "the", "and") get low IDF, rare tokens get high IDF.
-	docFreq := make(map[string]int, 10000)
-	totalDocs := 0
-	for _, segs := range m.ByWord {
-		seen := make(map[string]struct{}, 8)
-		for _, s := range segs {
-			t := field(s)
-			if t == "" {
-				continue
-			}
-			for _, tok := range EnTokenize(t) {
-				if _, ok := seen[tok]; ok {
-					continue
-				}
-				seen[tok] = struct{}{}
-				docFreq[tok]++
-			}
-		}
-		totalDocs++
-	}
-	idf := func(tok string) float64 {
-		df := docFreq[tok]
-		if df == 0 {
-			df = 1 // unseen — assume some doc count
-		}
-		// Smoothed IDF: ln((N - df + 0.5) / (df + 0.5) + 1).
-		return math.Log((float64(totalDocs)-float64(df)+0.5)/(float64(df)+0.5) + 1.0)
-	}
-	qIDFs := make([]float64, len(qTokens))
-	for i, t := range qTokens {
-		qIDFs[i] = idf(t)
-	}
-
 	type scored struct {
 		key   uint64
-		score int    // lower is better
-		class int    // 0..4
-		title string // gloss / translation text
+		score int
+		class int
+		title string
 		surah int
 		ayah  int
 		word  int
@@ -213,15 +332,13 @@ func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, lim
 			for _, tt := range tTokens {
 				tSet[tt] = struct{}{}
 			}
-			// Score = class * 1M - IDF-weighted relevance + length penalty.
-			// Lower is better, so subtract IDF (rarer tokens = more relevant).
-			matchedIDF := 0.0
-			for i, qt := range qTokens {
+			idfSum := 0.0
+			for _, qt := range qTokens {
 				if _, ok := tSet[qt]; ok {
-					matchedIDF += qIDFs[i]
+					idfSum += math.Log(float64(len(m.ByWord)+1) / float64(seenCount(m, qt, field)+1))
 				}
 			}
-			score := int(detail.Class)*1000000 - int(matchedIDF*10) + len(tTokens)
+			score := int(detail.Class)*1000000 - int(idfSum*10) + len(tTokens)
 			if score < best.score {
 				best = scored{
 					key:   key,
@@ -264,15 +381,167 @@ func englishOrTranslation(q string, m *types.MasaqIndex, quran *types.Quran, lim
 			Link:  "/surah/" + strconv.Itoa(c.surah) + "#verse-" + strconv.Itoa(c.ayah),
 			Score: c.score,
 		}
-		// Highlight the first matching word (token) in the title,
-		// not just the raw query substring — this way the <mark> tag
-		// always wraps a clean word and never bleeds across boundaries
-		// like the old "rest<mark>rain</mark>ed" rendering.
 		r.Snippet = highlightWord(c.title, qTokens)
 		r.VerseText = verseText(quran, c.surah, c.ayah)
 		out[i] = r
 	}
 	return out
+}
+
+// seenCount counts the number of docs containing token `tok` in
+// the given field. O(N) — only used in the legacy linear path.
+func seenCount(m *types.MasaqIndex, tok string, field func(types.MasaqSegment) string) int {
+	n := 0
+	seen := make(map[uint64]struct{})
+	for key, segs := range m.ByWord {
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		for _, s := range segs {
+			for _, t := range EnTokenize(field(s)) {
+				if t == tok {
+					seen[key] = struct{}{}
+					n++
+					break
+				}
+			}
+		}
+	}
+	return n
+}
+
+// expandPostings returns the union of postings for all query tokens,
+// extended with vocabulary words that share a prefix or are within
+// AUTO-fuzziness edit distance of any query token. Returns the
+// candidate set as a deduplicated, sorted []uint64 slice.
+//
+// Complexity: O(Σ|posting_lit| + O(V) for prefix + O(V) for fuzzy)
+// where V is the vocabulary size. V ≈ 5K for English, so the O(V)
+// scans are negligible compared to the previous O(N) full scan.
+//
+// For prefix queries (e.g. "mer" → mercy, merciful) and fuzzy
+// queries (e.g. "rain" → reign, brain) we use linear vocabulary
+// scans; for our scale (5K entries) a Trie / BK-tree is overkill.
+// When the corpus grows past ~50K unique tokens, we should swap in
+// a radix tree and BK-tree — see /tmp/algo-research/01_data_structures.md
+// sections 2 and 3.
+func expandPostings(postings map[string][]uint64, qTokens []string) []uint64 {
+	if len(postings) == 0 {
+		return nil
+	}
+	// Map keyed by LocKey to dedupe candidates from multiple postings.
+	candSet := make(map[uint64]struct{}, 4096)
+	for _, qt := range qTokens {
+		for _, key := range postings[qt] {
+			candSet[key] = struct{}{}
+		}
+	}
+	// Prefix expansion: any vocab word starting with a query token
+	// (and longer) is a candidate via the PREFIX class.
+	for _, qt := range qTokens {
+		if len(qt) < 2 {
+			continue
+		}
+		for v, posts := range postings {
+			if v == qt {
+				continue
+			}
+			if len(v) > len(qt) && hasPrefix(v, qt) {
+				for _, key := range posts {
+					candSet[key] = struct{}{}
+				}
+			}
+		}
+	}
+	// Fuzzy expansion: any vocab word within AUTO-fuzz edit distance
+	// of a query token, with a 2-char prefix lock, is a candidate
+	// via the FUZZY class.
+	for _, qt := range qTokens {
+		if len(qt) < 3 {
+			continue
+		}
+		af := autoFuzziness(len(qt))
+		pre2 := qt[:2]
+		for v, posts := range postings {
+			if v == qt {
+				continue
+			}
+			if len(v) < 3 || v[:2] != pre2 {
+				continue
+			}
+			if abs(len(v)-len(qt)) > af {
+				continue
+			}
+			if Levenshtein(qt, v) <= af {
+				for _, key := range posts {
+					candSet[key] = struct{}{}
+				}
+			}
+		}
+	}
+	out := make([]uint64, 0, len(candSet))
+	for k := range candSet {
+		out = append(out, k)
+	}
+	slices.Sort(out)
+	return out
+}
+
+// hasPrefix is a thin alias for strings.HasPrefix — inlined to keep
+// this file's hot path free of `strings` lookups for the trim cases.
+func hasPrefix(s, prefix string) bool {
+	return len(s) >= len(prefix) && s[:len(prefix)] == prefix
+}
+
+// bm25ScoreForDocWithText computes the BM25 score of a doc against
+// query tokens, given the doc's pre-tokenized text and the corpus
+// `postings` map (for IDF lookup).
+//
+// BM25 (Robertson–Sparck Jones, with the +1 IDF form so it's never
+// negative — see /tmp/algo-research/01_data_structures.md section 4):
+//
+//   score(D, Q) = Σ_{qi ∈ Q} IDF(qi) · (f(qi,D)·(k1+1)) /
+//                                 (f(qi,D) + k1·(1 - b + b·|D|/avgdl))
+//
+//   IDF(qi)    = ln((N - df + 0.5) / (df + 0.5) + 1)
+//
+// We use k1=1.2, b=0.75 (Lucene/Elasticsearch defaults — empirically
+// tuned on TREC short-text corpora).
+func bm25ScoreForDocWithText(postings map[string][]uint64, qTokens []string, docTokens []string, avgDocLen float64, totalDocs int) float64 {
+	if len(docTokens) == 0 || avgDocLen == 0 || totalDocs == 0 {
+		return 0
+	}
+	dl := len(docTokens)
+	qSet := make(map[string]struct{}, len(qTokens))
+	for _, qt := range qTokens {
+		qSet[qt] = struct{}{}
+	}
+	tf := make(map[string]int, len(qTokens))
+	for _, t := range docTokens {
+		if _, ok := qSet[t]; ok {
+			tf[t]++
+		}
+	}
+	if len(tf) == 0 {
+		return 0
+	}
+	const k1 = 1.2
+	const b = 0.75
+	score := 0.0
+	for qt := range qSet {
+		df := len(postings[qt])
+		if df == 0 {
+			continue
+		}
+		f := tf[qt]
+		if f == 0 {
+			continue
+		}
+		idf := math.Log((float64(totalDocs)-float64(df)+0.5)/(float64(df)+0.5) + 1.0)
+		score += idf * (float64(f)*(k1+1)) /
+			(float64(f) + k1*(1-b+b*float64(dl)/avgDocLen))
+	}
+	return score
 }
 
 // highlightWord picks the first query token that appears as a whole

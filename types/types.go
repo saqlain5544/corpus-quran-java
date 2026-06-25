@@ -85,6 +85,16 @@ type MasaqSegment struct {
 // 64-bit LocKey(surah, ayah, word) so each fetch is a single hashmap
 // lookup with no allocations.
 //
+// The optional inverted indexes (ByEnTokenPostings, ByTranslationPostings)
+// are populated by the data package at LoadAll time and used by the
+// search package for sub-linear English/Translation lookups. They map
+// each tokenized gloss / translation token to a sorted []uint64 of
+// LocKey postings (the standard "postings list" of an inverted index).
+//
+// GlossAvgDocLen / TranslationAvgDocLen hold the BM25 average doc
+// length per field, pre-computed at LoadAll time so the per-query
+// BM25 calculation is O(matches) instead of O(N).
+//
 // Note: there are ~23 cases where MASAQ and the XML disagree on word
 // boundaries (MASAQ merges "waw + ma" into "wama" while the XML
 // keeps them as two tokens). For those, the strict ByWord lookup
@@ -92,7 +102,11 @@ type MasaqSegment struct {
 // try a fuzzy match. The known divergences are documented in
 // docs/research/data-validation.md.
 type MasaqIndex struct {
-	ByWord map[uint64][]MasaqSegment
+	ByWord                map[uint64][]MasaqSegment
+	ByEnTokenPostings     map[string][]uint64 // en-token (Gloss) → LocKey postings
+	ByTranslationPostings map[string][]uint64 // en-token (Translation) → LocKey postings
+	GlossAvgDocLen        float64             // avg |unique tokens| per doc (Gloss)
+	TranslationAvgDocLen  float64             // avg |unique tokens| per doc (Translation)
 }
 
 // RootEntry is one root with its meanings and occurrences.
