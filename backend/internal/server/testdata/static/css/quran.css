@@ -38,6 +38,19 @@
 	margin: var(--sp-6) 0;
 	scroll-margin-top: 8rem;
 	position: relative;
+	/* Skip rendering of off-screen ayahs on long surahs (e.g.
+	   Al-Baqarah has 286 verses / ~6,100 word tokens). Without this
+	   the browser lays out and paints every verse on initial load,
+	   then re-lays them out when hafs.woff2 finishes loading.
+	   With content-visibility: auto the browser skips everything
+	   off-screen until it scrolls into view — see MDN / web.dev:
+	   https://developer.mozilla.org/en-US/docs/Web/CSS/content-visibility
+	   https://web.dev/articles/content-visibility
+	   contain-intrinsic-size: auto 250px lets the browser keep
+	   the scrollbar stable: the "auto" means "remember the natural
+	   height after first render, fall back to 250px before that". */
+	content-visibility: auto;
+	contain-intrinsic-size: auto 250px;
 }
 
 /* Bookmark button — sits at the start of each ayah (RTL: visually
