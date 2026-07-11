@@ -84,7 +84,8 @@
 .ayah-text {
 	margin: 0;
 	padding: 0;
-	display: inline;
+	/* Block by default so the paragraph establishes a proper BFC
+	   and word-clusters wrap naturally with justify-text spacing. */
 }
 
 /* ── Word cluster (word + trailing marks + ayah number) ──────
@@ -111,33 +112,103 @@
 }
 
 /* ── Ayah number (inline SVG) ────────────────────────────────
- * Per plan.md: "an svg with text inside centered horizontally,
- * vertically. the svg scales when the number of letters increase
- * from 1 to 10 then 100. max can be 3 digits."
+ * Decorative gold verse marker — modeled after modern mushaf apps
+ * (quran.com and similar). The SVG is centered vertically with the
+ * surrounding Arabic text via `vertical-align: middle` on both the
+ * link wrapper and the SVG itself.
  *
- * The viewBox is fixed at 24×24; the rendered width/height are
- * proportional to the Quran font size so the SVG scales naturally.
- * The circle (ayah-number-bg) is the Quran.com-style enclosure
- * background, the text (ayah-number-text) holds the number.
+ * Anatomy of the marker (inside the 48×48 viewBox):
+ *   .ayah-number-bg       — 16-point star outline (outer decorative frame)
+ *   .ayah-number-ring     — thin inner circle (refined "double-line" edge)
+ *   .ayah-number-fill     — solid gold disc behind the number for legibility
+ *   .ayah-number-text     — the verse digits, centered horizontally AND
+ *                           vertically by `text-anchor: middle` and
+ *                           `dominant-baseline: central`
+ *
+ * Sizing: viewBox 48×48, rendered width/height = 1.7em (relative to
+ * the Quran font size), so the marker scales with the user's font
+ * slider and stays proportional at any size.
+ *
+ * Vertical alignment:
+ *   .ayah-number-link  → inline-flex / center (link box itself)
+ *   .ayah-number       → vertical-align: middle (the SVG inside the word cluster)
+ *   .word-cluster      → inline-block + vertical-align: middle (the parent)
+ * Three layers of middle-alignment so the mark stays vertically centered
+ * relative to the Quran line box regardless of font size.
  */
+.ayah-number-link {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* `vertical-align: -0.25em` lifts the marker slightly above the
+	 * line-box center. The line-box center is at baseline+half-leading,
+	 * but Arabic letters visually center a bit higher than that (in the
+	 * x-height range, not the leading range). Without this lift the
+	 * marker reads as sitting BELOW the Arabic text — at quran.com and
+	 * similar mushaf apps the marker is level with the letter mid-line.
+	 * Calibrated empirically for the 22px Quran font: with -0.25em the
+	 * marker's center sits within 0.2px of the word's bounding-box center.
+	 * The value is em-based so it scales with the font-size slider. */
+	vertical-align: -0.25em;
+	/* A hair of breathing room between the last word and the verse mark.
+	 * The word-cluster--end span already has margin-inline-start, this
+	 * is a small extra in case the cluster margin is overridden. */
+	padding-inline: 2px;
+	text-decoration: none;
+	color: inherit;
+}
+
 .ayah-number {
 	display: inline-block;
+	/* `vertical-align: middle` keeps the SVG's own bounding box centered
+	 * with the surrounding text baseline+half-x-height. */
 	vertical-align: middle;
 	margin: 0;
 	flex-shrink: 0;
+	overflow: visible;
 }
+
 .ayah-number-bg {
+	/* Outer decorative 16-point star. Filled with the gold accent at
+	 * low opacity so the outer frame reads as a soft halo, not a hard
+	 * outline. The stroke gives the frame a crisp edge. */
 	fill: var(--accent);
-	fill-opacity: 0.25;
+	fill-opacity: 0.18;
 	stroke: var(--accent);
-	stroke-width: 0.5;
+	stroke-width: 0.7;
+	stroke-linejoin: round;
 }
-.ayah-number-text {
-	font: 700 11px var(--font-arabic);
+
+.ayah-number-ring {
+	/* Thin inner ring — gives the marker a refined double-line look.
+	 * No fill, only a stroke. Slightly thicker than the outer frame so
+	 * the two rings feel balanced rather than competing. */
+	fill: none;
+	stroke: var(--accent);
+	stroke-width: 0.6;
+	stroke-opacity: 0.6;
+}
+
+.ayah-number-fill {
+	/* Solid gold disc behind the number. Higher fill-opacity than the
+	 * outer frame so the digits read clearly against the frame. */
 	fill: var(--accent);
-	dominant-baseline: middle;
-	/* dominant-baseline + text-anchor=middle keeps the digits
-	 * centred at any font size. */
+	fill-opacity: 0.85;
+}
+
+.ayah-number-text {
+	/* The verse number itself.
+	 *   text-anchor="middle" + dominant-baseline="central" (set inline
+	 *   on the <text>) guarantee pixel-perfect horizontal AND vertical
+	 *   centering for any digit count, any font size.
+	 *   font-size = 17 (≈ 35% of the 48-unit viewBox) reads at a glance
+	 *   even when the Quran font is at its smallest.
+	 *   fill is the page surface (background) so the digits read as
+	 *   "knocked out" of the gold disc — high contrast in both light
+	 *   and dark themes without needing a separate text color token. */
+	font: 700 17px var(--font-arabic);
+	fill: var(--bg);
+	dominant-baseline: central;
 }
 
 .ayah-focus {
@@ -159,10 +230,17 @@
 	transition: background var(--dur-fast) var(--ease-out);
 	white-space: nowrap;
 }
-.ayah-text .word:hover,
+.ayah-text .word:hover {
+  background: var(--word-hover-bg);
+}
+/* Keyboard focus needs a visible indicator beyond the subtle
+ * background tint — the 10%-alpha hover color fails WCAG 2.4.7
+ * on its own. Use a 2px outline ring that mirrors the global
+ * focus-visible style (see layout.css). */
 .ayah-text .word:focus-visible {
-	background: var(--word-hover-bg);
-	outline: none;
+  background: var(--word-hover-bg);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 .ayah-text .word[data-loading="true"] {
 	opacity: 0.7;
@@ -341,6 +419,27 @@
 	font: var(--fs-xs)/1 var(--font-latin);
 	color: var(--ink-soft);
 }
+/* Close button (added by surah-side-panel.js). Pinned to the
+ * panel's top-right corner so touch users always have a visible
+ * affordance to dismiss — Escape alone is invisible. */
+.ssp-close {
+	margin-left: auto;
+	background: transparent;
+	border: 0;
+	font-size: var(--fs-lg);
+	line-height: 1;
+	color: var(--ink-muted);
+	cursor: pointer;
+	padding: var(--sp-1) var(--sp-2);
+	border-radius: var(--radius-sm);
+	transition: background var(--dur-fast) var(--ease-out),
+	            color var(--dur-fast) var(--ease-out);
+}
+.ssp-close:hover { background: var(--bg-sunken); color: var(--ink); }
+.ssp-close:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
 
 .ssp-empty,
 .ssp-loading {
@@ -390,6 +489,35 @@
 	font: var(--fs-xs)/1 var(--font-mono);
 	color: var(--ink-soft);
 	margin-top: 2px;
+}
+/* Morphology summary chips — shown at the top of the panel for the
+ * clicked word, giving the reader immediate morphological context
+ * before the per-segment breakdown below. */
+.ssp-morph-summary {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--sp-1);
+	margin: var(--sp-2) 0;
+}
+.ssp-morph-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 2px var(--sp-2);
+	background: var(--bg-sunken);
+	border: 1px solid var(--rule);
+	border-radius: 999px;
+	font-size: var(--fs-xs);
+	white-space: nowrap;
+}
+.ssp-morph-chip-label {
+	font-family: var(--font-mono);
+	font-weight: 600;
+	color: var(--accent);
+}
+.ssp-morph-chip-count {
+	color: var(--ink-soft);
+	font-variant-numeric: tabular-nums;
 }
 .ssp-gloss {
 	color: var(--ink);
@@ -614,7 +742,213 @@
 	.surah-side-panel.is-open {
 		display: block;
 	}
-	.surah-main {
-		grid-column: 3;
+}
+
+/* ─── Mobile touch targets ─────────────────────────────────────
+ * WCAG 2.5.8: interactive controls must be ≥ 44×44 px. On
+ * mobile the word buttons and bookmark stars default to ~22 px
+ * tall (font-driven). Bump padding so the hit area clears the
+ * threshold without enlarging the visible glyph. */
+@media (max-width: 768px) {
+	.ayah-text .word {
+		min-height: 44px;
+		padding: var(--sp-2) var(--sp-2);
 	}
+	.ayah-bookmark {
+		min-width: 44px;
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.ssp-close {
+		min-width: 44px;
+		min-height: 44px;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	/* On narrow viewports the side panel becomes a full-width
+	 * bottom sheet — fixed to the bottom, with a tall scrollable
+	 * area. The surah-main fills the whole viewport behind it. */
+	.page-surah {
+		grid-template-columns: 1fr;
+	}
+	.surah-side-panel {
+		position: fixed;
+		top: auto;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		width: auto;
+		max-height: 70vh;
+		border-inline-start: 0;
+		border-top: 3px solid var(--panel-border);
+		border-radius: var(--radius-md) var(--radius-md) 0 0;
+		padding: var(--sp-3) var(--sp-3) var(--sp-3) calc(var(--sp-3) + 3px);
+		/* Slide-up animation when opening. */
+		transform: translateY(100%);
+		transition: transform var(--dur-base) var(--ease-out);
+	}
+	.surah-side-panel.is-open {
+		transform: translateY(0);
+	}
+
+	/* When the side panel is open on mobile, dim the underlying
+	 * Quran text so the panel feels modal without being a true
+	 * full-screen overlay. */
+	.surah-main.is-dimmed {
+		opacity: 0.4;
+		pointer-events: none;
+		transition: opacity var(--dur-base) var(--ease-out);
+	}
+}
+
+/* ─── Print styles ───────────────────────────────────────────
+ * Optimised for studying/printing Quran pages. Hide everything
+ * that doesn't belong on paper — chrome, tooltips, side panels,
+ * bookmark stars — keep verse text, translation, and verse numbers
+ * in a readable single-column layout.
+ *
+ * Layout decisions:
+ *   - Hide global header (no nav/search UI on paper)
+ *   - Hide surah-side-panel (the word detail is for screen, not paper)
+ *   - Hide the surah-header (its only purpose is screen navigation)
+ *   - Hide the surah's "search in surah" / translation controls —
+ *     these are navigation chrome too
+ *   - Hide bookmark icons on each ayah
+ *   - Force URL Footers (English translation) to render
+ *   - Keep verse markers (gold numbers) so the reader can reference
+ *     verses by number
+ *   - Page-break-inside: avoid on each .ayah so a verse isn't
+ *     split across two pages */
+@media print {
+	/* ── Hide chrome ─────────────────────────── */
+	.global-header,
+	.surah-side-panel,
+	.surah-side-panel.is-open,
+	.sh-nav-row,
+	.sh-search,
+	.sh-trans-row,
+	.ssp-close,
+	.ayah-bookmark {
+		display: none !important;
+	}
+
+	/* ── Reset sticky / fixed positioning ──────────── */
+	.global-header,
+	.surah-header,
+	.page-surah {
+		position: static !important;
+	}
+
+	/* ── Layout for paper ─────────────────────── */
+	body {
+		background: #fff !important;
+		color: #000 !important;
+		font: 12pt/1.5 serif;
+	}
+
+	.page-surah {
+		max-width: none !important;
+		padding: 0 !important;
+		margin: 0 !important;
+		display: block !important;
+	}
+
+	.quran {
+		max-width: none !important;
+		padding: 0 !important;
+		margin: 0 !important;
+	}
+
+	/* Verse text — preserve right-to-left Arabic, drop hover
+	 * styles that don't make sense on paper. */
+	.ayah-text {
+		direction: rtl;
+		text-align: right;
+		font-size: 14pt;
+		line-height: 2;
+		margin: 0 0 1em;
+		color: #000;
+	}
+
+	/* English translation under each ayah. We print it on its
+	 * own line below the Arabic to keep reading flow natural. */
+	.ayah-trans {
+		display: block !important;
+		direction: ltr;
+		text-align: left;
+		font-size: 10pt;
+		line-height: 1.4;
+		color: #444;
+		margin: 0 0 0.5em 2em;
+	}
+
+	/* Word buttons lose their hover/active styles; show as plain text. */
+	.ayah-text .word {
+		display: inline;
+		padding: 0;
+		background: none !important;
+		border: 0 !important;
+		font-weight: inherit;
+		color: inherit;
+		cursor: default;
+	}
+
+	/* Show the URL anchors as visible page-number references.
+	 * On screen they're clickable links with href="#verse-N". On
+	 * paper we don't show #verse-N (it's a fragment identifier),
+	 * but we DO want the verse number visible inline so a reader can
+	 * reference 2:37 in a printed page. */
+	.ayah-number-link {
+		color: #888 !important;
+		text-decoration: none !important;
+	}
+	.ayah-number-link::after {
+		content: " (" attr(href) ")";
+	}
+
+	/* Don't paginate mid-verse if we can help it. */
+	.ayah {
+		page-break-inside: avoid;
+		break-inside: avoid;
+	}
+
+	/* Page numbers + surah header (visible in normal view) get
+	 * bigger margin so they show at the top of each printed page. */
+	.surah-header h1, .layout-header h1 {
+		font: 18pt/1.4 serif;
+		margin: 0 0 1em 0;
+	}
+
+	.page-header, .layout-header {
+		margin: 0 0 1em 0;
+		padding: 0;
+		border: 0;
+	}
+
+	/* The empty-divider verse breaks (1fr rows). They don't add
+	 * value on paper; collapse them. */
+	.ayah-divider { display: none; }
+
+	/* Surah metadata (1 surah, 286 ayahs) lives in the side panel —
+	 * which is hidden. Lift the most useful bit (surah + ayah counts)
+	 * into the main flow so printed pages show context. */
+	.page-surah::before {
+		content: "Quran Reader — Surah " attr(data-surah);
+		display: block;
+		font: 18pt/1.4 serif;
+		margin: 0 0 1em;
+	}
+
+	/* Make sure no font-like elements get light text or hidden
+	 * tooltips. Tooltips are a screen-only concept. */
+	.word-tooltip { display: none !important; }
+
+	/* Don't print URL hrefs in the visible body (the browser
+	 * already prints them in the page footer for each link by default).
+	 * Force that off — it'd be noisy on a Quran page. */
+	a[href]::after { content: ""; }
 }

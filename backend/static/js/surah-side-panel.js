@@ -1,22 +1,18 @@
-// surah-side-panel.js — fixed left panel showing the full analysis
-// for the clicked word. Per plan.md §Surah-Page Column1: "don't
-// show concordance data here just all the masaq, and root
-// meanings data. don't use multiple columns, use stacked data."
-//
-// The panel renders a single stacked column with this structure:
+// surah-side-panel.js — left panel showing the full analysis
+// for the clicked word. Concordance/lemma-frequency data is NOT
+// shown here (per user instruction). The panel renders a single
+// stacked column with this structure:
 //
 //   ┌──────────────────────────┐
 //   │ Word  9:5:18            │  ← word + ref
+//   │ [MorphSummary chips]     │  ← MorphTag × MorphType at top
 //   │ Root   (arabic/buckwalter)│
 //   │ Lemma  (from masaq)      │
 //   │ Gloss  english gloss     │
 //   │ ─ Masaq Tags ─           │
-//   │ seg 1: prefix/stem/suffix│  ← full MASAQ data, no repetition
+//   │ seg 1: prefix/stem/suffix│  ← full MASAQ data per segment
 //   │ seg 2: ...                │
-//   │ ─ Lemma frequency ─      │  ← first block
-//   │ lemma × 74  (current)     │
-//   │ lemma × 5                │
-//   │ ─ Full Meaning (JSONL) ─  │  ← second block
+//   │ ─ Full Meaning (JSONL) ─  │  ← meaning, lexicons, examples
 //   │ meaning_en (full)         │
 //   │ meaning_ar (full)         │
 //   │ Ibn Fāris: ...            │
@@ -33,25 +29,123 @@
   var content = document.getElementById("ssp-content");
   if (!content) return;
 
+  // Make the panel a proper dialog for screen readers.
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-labelledby", "ssp-header-label");
+
   var cache = {};
   var currentLemma = "";
+  // Monotonic counter — only the latest click is allowed to render.
+  // Without this, clicking word B while word A's root fetch is
+  // still in flight lets word A's stale rootData land in B's
+  // panel (and pollutes the cache under B's key).
+  var requestId = 0;
+  var lastFocused = null;
+
+  // ── Close ────────────────────────────────────────────────────
+  // Escape closes; clicking outside the panel (on the surah body)
+  // also closes. The visible close button below is the primary
+  // affordance for touch users.
+  // Mobile dimming — when the side panel opens on narrow viewports
+  // it transforms into a bottom-sheet. To make the panel feel
+  // modal-ish without becoming a full-screen overlay, dim the
+  // underlying .surah-main via a class. The class is a no-op on
+  // desktop (the CSS only applies it inside the mobile @media
+  // query). */
+  var surahMain = document.querySelector(".surah-main");
+
+  function closePanel() {
+    panel.classList.remove("is-open");
+    if (surahMain) surahMain.classList.remove("is-dimmed");
+    if (lastFocused && typeof lastFocused.focus === "function") {
+      lastFocused.focus();
+      lastFocused = null;
+    }
+  }
+
+  function openPanel() {
+    panel.classList.add("is-open");
+    if (surahMain) surahMain.classList.add("is-dimmed");
+  }
+
+  // Add a visible close button to the header on first render.
+  var header = panel.querySelector(".ssp-header");
+  if (header && !header.querySelector(".ssp-close")) {
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "ssp-close";
+    btn.setAttribute("aria-label", "Close word analysis");
+    btn.textContent = "✕";
+    btn.addEventListener("click", closePanel);
+    header.appendChild(btn);
+  }
+
+  // Escape closes.
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && panel.classList.contains("is-open")) {
+      e.preventDefault();
+      closePanel();
+    }
+  });
+
+  // Focus trap: when the panel is open, Tab cycles between its
+  // focusable descendants (close button + any links inside content).
+  panel.addEventListener("keydown", function (e) {
+    if (e.key !== "Tab" || !panel.classList.contains("is-open")) return;
+    var focusables = panel.querySelectorAll(
+      'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+    );
+    if (focusables.length === 0) return;
+    var first = focusables[0], last = focusables[focusables.length - 1];
+    var active = document.activeElement;
+    if (e.shiftKey && active === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
 
   document.addEventListener("click", function (e) {
-    var w = e.target.closest('[data-component="word"]');
+    // Click outside the panel while it's open → close. Skip clicks
+    // on other words (those are handled by the next branch) and on
+    // the panel itself.
+    if (panel.classList.contains("is-open")
+        && !panel.contains(e.target)
+        && !QR.dom.closestWord(e.target)) {
+      closePanel();
+      return;
+    }
+
+    var w = QR.dom.closestWord(e.target);
     if (!w) return;
     var root = w.dataset.root;
     var s = w.dataset.surah, a = w.dataset.ayah, wn = w.dataset.word;
     var key = s + ":" + a + ":" + wn;
 
+    // Track the previously focused element so closePanel() can
+    // restore focus to the word the user clicked (the trigger).
+    lastFocused = w;
+
     if (cache[key]) {
       content.innerHTML = cache[key];
-      panel.classList.add("is-open");
+      openPanel();
+      // Move focus to the close button so keyboard users land
+      // inside the dialog and Esc / Tab work as expected.
+      var cb = panel.querySelector(".ssp-close");
+      if (cb) cb.focus();
       return;
     }
 
     content.innerHTML = '<p class="ssp-loading">Loading…</p>';
-    panel.classList.add("is-open");
+    openPanel();
+    var cb = panel.querySelector(".ssp-close");
+    if (cb) cb.focus();
 
+    // Stamp this request; older fetches discard their results.
+    var myRequest = ++requestId;
     var wordData = null;
 
     fetch("/api/word?s=" + encodeURIComponent(s) +
@@ -59,6 +153,7 @@
           "&w=" + encodeURIComponent(wn))
       .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
       .then(function (wd) {
+        if (myRequest !== requestId) return; // stale
         wordData = wd;
         currentLemma = wd.lemma || "";
         if (root) {
@@ -68,23 +163,24 @@
         return null;
       })
       .then(function (rootData) {
+        if (myRequest !== requestId) return; // stale
         renderPanel(wordData, rootData);
         cache[key] = content.innerHTML;
       })
-      .catch(function () { content.innerHTML = '<p class="ssp-empty">Failed to load.</p>'; });
+      .catch(function () {
+        if (myRequest !== requestId) return; // stale
+        content.innerHTML = '<p class="ssp-empty">Failed to load.</p>';
+      });
   });
 
   // ── Render helpers ────────────────────────────────────────────
-  function esc(s) {
-    if (s == null) return "";
-    return String(s).replace(/[&<>"']/g, function (c) {
-      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
-    });
-  }
 
   // Render a labeled definition-list row: <dt>label</dt><dd>value</dd>.
   // `valueHtml` is inserted as raw HTML (caller's responsibility to
   // escape). `attrs` is an optional object of extra <dd> attributes.
+  // Uses QR.dom.escape so the single escape helper in dom.js is the
+  // canonical implementation — no duplicate escape logic anywhere.
+  var esc = QR.dom.escape;
   function dl(label, valueHtml, attrs) {
     var attrStr = "";
     if (attrs) {
@@ -158,6 +254,39 @@
     return '<h3 class="ssp-section">' + esc(label) + '</h3>';
   }
 
+  // Render a compact morphology summary for the current word's segments:
+  // shows each unique (MorphTag, MorphType) pair as a chip with count.
+  // For a single-segment word this is one chip; for prefixed words
+  // (e.g. "وَقَالُوا") it shows each segment's pattern distinctly.
+  function renderMorphSummary(segs) {
+    if (!segs || segs.length === 0) return '';
+    // Count unique (MorphTag, MorphType) combos.
+    var counts = {};
+    for (var i = 0; i < segs.length; i++) {
+      var s = segs[i];
+      var key = (s.MorphTag || '') + '|' + (s.MorphType || '');
+      if (!counts[key]) counts[key] = { tag: s.MorphTag || '', type: s.MorphType || '', count: 0 };
+      counts[key].count++;
+    }
+    var keys = Object.keys(counts);
+    if (keys.length === 0) return '';
+
+    var html = '<div class="ssp-morph-summary">';
+    for (var k = 0; k < keys.length; k++) {
+      var e = counts[keys[k]];
+      var label = e.tag || '—';
+      if (e.type) label = e.type + ' · ' + label;
+      html += '<span class="ssp-morph-chip">';
+      html += '<span class="ssp-morph-chip-label">' + esc(label) + '</span>';
+      if (e.count > 1) {
+        html += '<span class="ssp-morph-chip-count">' + e.count + '×</span>';
+      }
+      html += '</span>';
+    }
+    html += '</div>';
+    return html;
+  }
+
   function renderPanel(wordData, rootData) {
     var html = '';
     var segs = wordData.segments || [];
@@ -169,6 +298,11 @@
     html += '<span class="ssp-word-ref">' +
       esc(wordData.surah + ":" + wordData.ayah + ":" + wordData.word) + '</span>';
     html += '</div>';
+
+    // ── 1b. Morphology summary (top of panel) ─────────────────────
+    // Show aggregated MorphTag × MorphType chips so the reader immediately
+    // sees the morphological pattern before the per-segment breakdown.
+    html += renderMorphSummary(segs);
 
     // ── 2. Root (Arabic / Buckwalter) ───────────────────────────
     if (wordData.root && wordData.root.buckwalter) {
@@ -206,34 +340,7 @@
       html += '</div>';
     }
 
-    // ── 6. Lemma frequency block (first) ───────────────────────
-    // Per the user's request: "I want lemma frequency first as a
-    // block then full jsonl block after that". So this section
-    // comes BEFORE the full meaning data.
-    if (rootData && rootData.lemmas && rootData.lemmas.length > 0) {
-      html += section("Lemma frequency");
-      // Sort: current lemma first, then by frequency desc.
-      var lemmas = rootData.lemmas.slice();
-      lemmas.sort(function (a, b) {
-        if (currentLemma && a.arabic === currentLemma) return -1;
-        if (currentLemma && b.arabic === currentLemma) return 1;
-        return b.occurrences - a.occurrences;
-      });
-      html += '<ol class="ssp-freq-list">';
-      for (var j = 0; j < lemmas.length; j++) {
-        var lm = lemmas[j];
-        var isCur = currentLemma && lm.arabic === currentLemma;
-        var cls = "ssp-freq-row" + (isCur ? " is-current" : "");
-        html += '<li class="' + cls + '">';
-        html += '<span class="ssp-freq-arabic" lang="ar" dir="rtl">' +
-          esc(lm.arabic) + '</span>';
-        html += '<span class="ssp-freq-count">' + lm.occurrences + '×</span>';
-        html += '</li>';
-      }
-      html += '</ol>';
-    }
-
-    // ── 7. Full JSONL block (meanings, lexicons, examples) ──────
+    // ── 6. Full JSONL block (meanings, lexicons, examples) ──────
     if (rootData) {
       html += section("Meaning (from AI source)");
 

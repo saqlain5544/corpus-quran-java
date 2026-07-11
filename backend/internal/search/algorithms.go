@@ -2,9 +2,7 @@ package search
 
 import (
 	"cmp"
-	"encoding/gob"
 	"math"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -73,18 +71,19 @@ func arabicOrLemma(q string, m *types.MasaqIndex, quran *types.Quran, limit, fil
 		cands[key] = 0
 	}
 	// 2. Bidirectional substring match. Both directions of containment
-	//    are treated as class 1. We skip single-character vocab entries
+	//    are treated as class 1. We skip single-rune vocab entries
 	//    to avoid spurious matches (e.g., a 1-char query matches every
-	//    word containing that character).
-	if len(q) >= 2 {
+	//    word containing that character). Rune counts (not bytes) —
+	//    Arabic chars are 2 bytes each in UTF-8.
+	if utf8.RuneCountInString(q) >= 2 {
 		for v, posts := range postings {
-			if v == q || len(v) < 2 {
+			if v == q || utf8.RuneCountInString(v) < 2 {
 				continue
 			}
 			matched := false
-			if len(v) > len(q) && strings.Contains(v, q) {
+			if utf8.RuneCountInString(v) > utf8.RuneCountInString(q) && strings.Contains(v, q) {
 				matched = true
-			} else if len(q) > len(v) && strings.Contains(q, v) {
+			} else if utf8.RuneCountInString(q) > utf8.RuneCountInString(v) && strings.Contains(q, v) {
 				matched = true
 			}
 			if !matched {
@@ -260,7 +259,7 @@ func scoreArabic(query, word string) int {
 //     - MatchExactWord   (class 1) — query is a whole token in the gloss
 //     - MatchPrefix      (class 2) — a gloss word starts with the query
 //     - MatchSubstring   (class 3) — query sits at the START of a gloss
-//                                    word (never in the middle of a word)
+//     word (never in the middle of a word)
 //     - MatchFuzzy       (class 4) — Levenshtein ≤ 2 on a single word
 //  3. Rank by class first, then by IDF-weighted relevance within the
 //     class, then by gloss length, then by surah/ayah.
@@ -578,7 +577,7 @@ func seenCount(m *types.MasaqIndex, tok string, field func(types.MasaqSegment) s
 //   - Literal: O(Σ|posting_lit|)
 //   - Prefix: O(V) scan of vocabulary (acceptable for V ≈ 5K)
 //   - Fuzzy: O(c^k · log V) via the BK-tree if `bkTree != nil`,
-//            else falls back to O(V) linear scan
+//     else falls back to O(V) linear scan
 //
 // When the corpus grows past ~50K unique tokens, swap in a proper
 // radix tree for prefix queries too — see
@@ -679,10 +678,10 @@ func hasPrefix(s, prefix string) bool {
 // BM25 (Robertson–Sparck Jones, with the +1 IDF form so it's never
 // negative — see /tmp/algo-research/01_data_structures.md section 4):
 //
-//   score(D, Q) = Σ_{qi ∈ Q} IDF(qi) · (f(qi,D)·(k1+1)) /
-//                                 (f(qi,D) + k1·(1 - b + b·|D|/avgdl))
+//	score(D, Q) = Σ_{qi ∈ Q} IDF(qi) · (f(qi,D)·(k1+1)) /
+//	                              (f(qi,D) + k1·(1 - b + b·|D|/avgdl))
 //
-//   IDF(qi)    = ln((N - df + 0.5) / (df + 0.5) + 1)
+//	IDF(qi)    = ln((N - df + 0.5) / (df + 0.5) + 1)
 //
 // We use k1=1.2, b=0.75 (Lucene/Elasticsearch defaults — empirically
 // tuned on TREC short-text corpora).
@@ -717,7 +716,7 @@ func bm25ScoreForDocWithText(postings map[string][]uint64, qTokens []string, doc
 			continue
 		}
 		idf := math.Log((float64(totalDocs)-float64(df)+0.5)/(float64(df)+0.5) + 1.0)
-		score += idf * (float64(f)*(k1+1)) /
+		score += idf * (float64(f) * (k1 + 1)) /
 			(float64(f) + k1*(1-b+b*float64(dl)/avgDocLen))
 	}
 	return score
@@ -725,12 +724,40 @@ func bm25ScoreForDocWithText(postings map[string][]uint64, qTokens []string, doc
 
 // highlightWord picks the first query token that appears as a whole
 // word in title (case-insensitive) and wraps it in <mark>…</mark>.
-// Falls back to wrapping the raw query string if no token match is
-// found (e.g., for fuzzy matches where the matched word is similar
-// but not equal to a query token).
+// For safety, if the title contains Arabic script it is also
+// normalized before searching.
 func highlightWord(title string, qTokens []string) string {
 	t := title
 	tLower := strings.ToLower(t)
+	// Detect Arabic script — if present, normalize to handle diacritics.
+	hasArabic := false
+	for _, r := range t {
+		if r >= 0x0600 && r <= 0x06FF {
+			hasArabic = true
+			break
+		}
+	}
+	if hasArabic {
+		tNorm := NormalizeArabic(t)
+		for _, qt := range qTokens {
+			qtNorm := NormalizeArabic(qt)
+			idx := strings.Index(NormalizeArabic(tNorm), qtNorm)
+			if idx >= 0 {
+				// Map back to original string.
+				pos := 0
+				for _, r := range t {
+					if pos == idx {
+						break
+					}
+					if !isNormalizationSkipped(r) {
+						pos++
+					}
+				}
+				end := pos + len(qt)
+				return t[:pos] + "<mark>" + t[pos:end] + "</mark>" + t[end:]
+			}
+		}
+	}
 	for _, qt := range qTokens {
 		// Find the token's position in the lowercased title.
 		// MASAQ glosses are all-hyphen-separated (no spaces), so a
@@ -744,12 +771,6 @@ func highlightWord(title string, qTokens []string) string {
 				return t[:idx] + "<mark>" + t[idx:end] + "</mark>" + t[end:]
 			}
 		}
-	}
-	// Fallback: wrap the raw query if no token match.
-	idx := strings.Index(tLower, strings.Join(qTokens, "-"))
-	if idx >= 0 {
-		end := idx + len(qTokens[0])*len(qTokens) + (len(qTokens)-1) // approximation
-		_ = end
 	}
 	return t
 }
@@ -768,15 +789,9 @@ func Lemma(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterS
 	bestByKey := make(map[uint64]SearchResult, 1000)
 	scoreByKey := make(map[uint64]int, 1000)
 
-	// Group segments by word key and compute lemma once per word.
-	type wordSegs struct{ segs []types.MasaqSegment }
-	wordsSeen := map[uint64]bool{}
-
+	// m.ByWord is keyed by loc.Key; each key is unique, so every
+	// iteration is first-encounter.
 	for key, segs := range m.ByWord {
-		if wordsSeen[key] {
-			continue
-		}
-		wordsSeen[key] = true
 		lemma := computeLemmaFromSegs(segs)
 		if lemma == "" {
 			continue
@@ -807,11 +822,10 @@ func Lemma(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterS
 		return nil
 	}
 	all := make([]SearchResult, 0, len(bestByKey))
-	for k, r := range bestByKey {
+	for _, r := range bestByKey {
 		r.Snippet = HighlightSnippet(r.Title, q)
 		r.VerseText = verseText(quran, r.Surah, r.Ayah)
 		all = append(all, r)
-		_ = k
 	}
 	slices.SortFunc(all, func(a, b SearchResult) int {
 		return cmp.Or(
@@ -827,17 +841,28 @@ func Lemma(q string, m *types.MasaqIndex, quran *types.Quran, limit int, filterS
 	return all
 }
 
-// computeLemmaFromSegs is a simplified version of server.computeLemma,
-// avoiding a circular dependency. Returns the bare-stem lemma given
-// a word's segments.
+// computeLemmaFromSegs returns a short lemma string for the segments
+// of a single word. Used in search-result titles.
+//
+// For Arabic proper nouns (ال + noun) we return the segment's
+// WithoutDiacritics with the leading DET alif restored. For verbs
+// we concatenate Prefix+Stem SegmentedWords. Otherwise we fall
+// back to the first segment's WithoutDiacritics.
 func computeLemmaFromSegs(segs []types.MasaqSegment) string {
-	// Proper noun → use first segment's WithoutDiacritics.
+	if len(segs) == 0 {
+		return ""
+	}
+	// Proper noun → use the noun segment's WithoutDiacritics (restored
+	// alif, not the raw prefix).
 	for _, s := range segs {
-		if s.MorphTag == "NOUN_PROP" && len(segs) > 0 {
-			return segs[0].WithoutDiacritics
+		if s.MorphTag == "NOUN_PROP" {
+			if s.WithoutDiacritics != "" {
+				return s.WithoutDiacritics
+			}
+			break
 		}
 	}
-	// Prefix + Stem → concatenate SegmentedWord.
+	// Verb (Prefix + Stem) → concatenate SegmentedWords.
 	var prefix, stem string
 	for _, s := range segs {
 		switch s.MorphType {
@@ -855,10 +880,7 @@ func computeLemmaFromSegs(segs []types.MasaqSegment) string {
 		return prefix + stem
 	}
 	// Fallback: first segment's WithoutDiacritics.
-	if len(segs) > 0 {
-		return segs[0].WithoutDiacritics
-	}
-	return ""
+	return segs[0].WithoutDiacritics
 }
 
 // Translation searches MASAQ word-level translations for English
@@ -897,8 +919,15 @@ func Root(q string, r *types.RootsIndex, quran *types.Quran, limit int) []Search
 		if hit, ok := r.ByArabic[letters]; ok {
 			bw = hit
 		} else {
-			bw = Buckwalter(NormalizeArabic(q))
+			// NormalizeArabic keeps spaces (e.g. "ق و ل" → "ق و ل")
+			// and Buckwalter preserves them ("q w l"), but ByRoot
+			// keys are space-free ("qwl"). Strip them or both the
+			// exact lookup and the prefix loop below silently miss.
+			bw = strings.ReplaceAll(Buckwalter(NormalizeArabic(q)), " ", "")
 		}
+	} else {
+		// ASCII input — same hazard if the user types "q w l".
+		bw = strings.ReplaceAll(bw, " ", "")
 	}
 
 	var all []SearchResult
@@ -1008,28 +1037,31 @@ func RootsList(r *types.RootsIndex, page, pageSize int, asc bool, filterSurah in
 // location. The locations come in surah/ayah ascending order; when
 // `asc` is true the result is reversed (last surah/ayah first) to
 // match the user-facing "Ascending" toggle on the root-detail page.
-func OccurrencesForRoot(root string, r *types.RootsIndex, q *types.Quran, filterSurah int, asc bool) []SearchResult {
+//
+// When masaq is non-nil, each result is enriched with the MASAQ
+// morphological segments for that word (morph_tag, syntactic_role,
+// case_mood, gloss, translation).
+func OccurrencesForRoot(root string, r *types.RootsIndex, q *types.Quran, masaq *types.MasaqIndex, filterSurah int, asc bool) []SearchResult {
 	e, ok := r.ByRoot[root]
 	if !ok {
 		return nil
 	}
 	out := make([]SearchResult, 0, len(e.Locations))
-	for _, loc := range e.Locations {
-		// Filter by surah if requested.
-		if filterSurah > 0 {
-			parts := strings.Split(loc, ":")
-			surah, _ := strconv.Atoi(parts[0])
-			if surah != filterSurah {
-				continue
-			}
-		}
-		parts := strings.Split(loc, ":")
+	for _, locStr := range e.Locations {
+		parts := strings.SplitN(locStr, ":", 3)
 		if len(parts) != 3 {
 			continue
 		}
-		surah, _ := strconv.Atoi(parts[0])
-		ayah, _ := strconv.Atoi(parts[1])
-		wordNo, _ := strconv.Atoi(parts[2])
+		surah, sErr := strconv.Atoi(parts[0])
+		ayah, aErr := strconv.Atoi(parts[1])
+		wordNo, wErr := strconv.Atoi(parts[2])
+		if sErr != nil || aErr != nil || wErr != nil {
+			continue
+		}
+		// Filter by surah if requested.
+		if filterSurah > 0 && surah != filterSurah {
+			continue
+		}
 		surahPtr := q.Surahs[surah]
 		if surahPtr == nil {
 			continue
@@ -1051,30 +1083,40 @@ func OccurrencesForRoot(root string, r *types.RootsIndex, q *types.Quran, filter
 				break
 			}
 		}
+		var morph []types.MasaqSegment
+		if masaq != nil {
+			morph = masaq.ByWord[loc.Key(surah, ayah, wordNo)]
+		}
 		out = append(out, SearchResult{
-			Kind:      "occurrence",
-			Surah:     surah,
-			Ayah:      ayah,
-			Word:      wordNo,
-			Title:     "Surah " + strconv.Itoa(surah) + ":" + strconv.Itoa(ayah),
-			Link:      "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
-			Snippet:   wordText,
-			VerseText: verseText(q, surah, ayah),
-			Root:      root,
+			Kind:          "occurrence",
+			Surah:         surah,
+			Ayah:          ayah,
+			Word:          wordNo,
+			Title:         "Surah " + strconv.Itoa(surah) + ":" + strconv.Itoa(ayah),
+			Link:          "/surah/" + strconv.Itoa(surah) + "#verse-" + strconv.Itoa(ayah),
+			Snippet:       wordText,
+			VerseText:     verseText(q, surah, ayah),
+			Root:          root,
+			MorphSegments: morph,
 		})
 	}
 	if asc {
-		// Reverse the natural (surah-ascending) order so the most
-		// recent occurrences appear first.
+		// Ascending: last surah/ayah first (surah DESC, ayah DESC within surah).
 		slices.SortStableFunc(out, func(a, b SearchResult) int {
 			return cmp.Or(
 				cmp.Compare(b.Surah, a.Surah),
 				cmp.Compare(b.Ayah, a.Ayah),
 			)
 		})
+	} else {
+		// Surah order: natural surah-ascending, ayah-ascending order.
+		slices.SortStableFunc(out, func(a, b SearchResult) int {
+			return cmp.Or(
+				cmp.Compare(a.Surah, b.Surah),
+				cmp.Compare(a.Ayah, b.Ayah),
+			)
+		})
 	}
-	// Default (asc=false): preserve the natural surah-ascending order
-	// in which Locations was built.
 	return out
 }
 
@@ -1118,14 +1160,4 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
-}
-
-// gobDecodeFile reads a gob file from disk.
-func gobDecodeFile(path string, v any) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	return gob.NewDecoder(f).Decode(v)
 }

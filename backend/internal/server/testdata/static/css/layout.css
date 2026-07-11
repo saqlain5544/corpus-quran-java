@@ -61,10 +61,25 @@ button { font: inherit; color: inherit; }
   min-height: 100vh;
 }
 
-/* ── Page: 12-col grid with 2-col gutters on each side ──────── */
-/* Every direct child occupies the central 8 columns. Children are
- * free to be grids or blocks of their own; the page-level grid only
- * controls horizontal placement. */
+/* ── Page: 8-col grid with 1-col gutters on each side ─────────── */
+/* Default content span: cols 2-7 (6 cols) — gives prose pages a
+ * comfortable reading measure without manual max-width rules. Pages
+ * that need full width (data tables, complex dashboards) opt out
+ * via .page-fullwidth (or .page-surah / .page-fontmeta for the
+ * specific cases that already break out of the grid).
+ *
+ * Why 8 cols instead of 12: 12 cols gave us 2-col gutters on each
+ * side which added ~17% horizontal padding on each edge that
+ * didn't carry information — it just left visible empty space. 8
+ * cols with 1-col gutters is cleaner: 6 content cols + 2 gutter
+ * cols = 25% gutters vs 33% with 12 cols. Pages still feel "framed"
+ * without feeling cramped.
+ *
+ * Breakpoints:
+ *   ≥900px: standard 8-col layout (1-col gutter each side)
+ *   640-900px: collapse the gutters — 1-col gutter, 6 content, 1-col gutter
+ *   <640px: full edge-to-edge — content uses 100% of viewport
+ */
 
 .page {
   flex: 1;
@@ -74,48 +89,122 @@ button { font: inherit; color: inherit; }
   padding: var(--sp-6) var(--sp-4);
   box-sizing: border-box;
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--grid-cols), minmax(0, 1fr));
   column-gap: var(--grid-gap);
   row-gap: var(--sp-6);
 }
 
 .page > * {
-  grid-column: 3 / span 8;
+  /* Default: 1-col gutter each side, 6 content cols. */
+  grid-column: 2 / span 6;
 }
 
-/* Surah page balances reader width with sidebar space.
- * 68% reader | 30% sidebar | 2% spacing — at the grid's column-ratio
- * level. The surah page breaks out of the standard .page 12-col grid
- * so it can use the full viewport width (capped at 96rem); the
- * standard 80rem .page cap made the sidebar too narrow (~170px at
- * 1280px viewport) to fit word-detail content comfortably. */
-.page-surah {
+/* ── Page variants ─────────────────────────────────────────────── */
+
+/* Full-width pages — escape the 8-col gutter for data tables,
+ * complex dashboards, or anything that benefits from edge-to-edge.
+ * The .page grid container still caps width and centers, so the
+ * content never grows past --grid-max. */
+.page-fullwidth,
+.page-surah,
+.page-fontmeta {
   grid-column: 1 / -1;
-  max-width: 96rem;
+  /* Sub-classes set their own max-width to match their content's
+   * ideal width; default is the same as .page. */
+  max-width: var(--grid-max);
   margin: 0 auto;
   padding: var(--sp-6) var(--sp-6);
   box-sizing: border-box;
 }
+/* Surah page wants a wider container than the default 80rem because
+ * the reader+sidebar layout needs more horizontal room. */
+.page-surah {
+  max-width: 96rem;
+}
 
-/* On narrow viewports, collapse the gutters so content uses the
- * full available width. The 2/8/2 split becomes 1 col each side +
- * 10 cols content; below 480px we go fully edge-to-edge. */
+/* ── Responsive — collapse gutters on narrower viewports ──────── */
 @media (max-width: 900px) {
-  .page > * { grid-column: 2 / span 10; }
-}
-@media (max-width: 600px) {
+  /* Drop the outer gutters. Content goes from cols 2-7 → 1-8
+   * (all 8 cols). Gutter-shrink means more reading width. */
   .page > * { grid-column: 1 / -1; }
-  .page { padding: var(--sp-4) var(--sp-3); }
+  .page-fullwidth,
+  .page-surah,
+  .page-fontmeta {
+    padding-inline: var(--sp-4);
+  }
 }
 
-/* ── Generic 12-col utility classes (rare; used inside grids) ── */
+@media (max-width: 640px) {
+  /* Phone-sized: tighten padding further, reduce vertical rhythm. */
+  .page {
+    padding: var(--sp-4) var(--sp-3);
+    row-gap: var(--sp-4);
+  }
+  .page-fullwidth,
+  .page-surah,
+  .page-fontmeta {
+    padding: var(--sp-4) var(--sp-3);
+  }
+}
+
+@media (max-width: 420px) {
+  /* Very narrow phones: drop all padding. Content goes
+   * edge-to-edge. */
+  .page,
+  .page-fullwidth,
+  .page-surah,
+  .page-fontmeta {
+    padding: var(--sp-3) var(--sp-2);
+  }
+}
+
+/* ── Print ──────────────────────────────────────────────────── *
+ * Hide chrome (global header, footer, bookmarks), use black text
+ * on white, drop background images. The Quran reader has its own
+ * more thorough @media print rules in quran.css — these are the
+ * catch-all rules for every other page. */
+
+@media print {
+  /* Hide interactive chrome that doesn't belong on paper. */
+  .global-header,
+  .skip,
+  .gh-bookmarks-drawer,
+  .gh-nav-drawer,
+  .continue-reading,
+  .layout-footer,
+  .nav-pagination,
+  [data-component="bookmarks-toggle"],
+  [data-component="theme-toggle"],
+  #word-tooltip,
+  [data-component="continue-reading"] {
+    display: none !important;
+  }
+  /* Reset sticky positions so the printed flow uses normal layout. */
+  .global-header,
+  .skip { position: static !important; }
+  /* No more dark-mode backgrounds — printers do their own thing. */
+  body { background: #fff !important; color: #000 !important; }
+  /* Hide bg-image watermarks that look like noise on paper. */
+  *,
+  *::before,
+  *::after {
+    background-image: none !important;
+    box-shadow: none !important;
+  }
+  /* Don't print the URLs of links — verbose on paper. */
+  a[href]::after { content: "" !important; }
+}
+
+/* ── Generic 8-col utility classes (rare; used inside grids) ──── */
 .grid { display: grid; grid-template-columns: repeat(var(--grid-cols), minmax(0, 1fr)); gap: var(--grid-gap); }
-.col-12 { grid-column: span 12; }
-.col-9  { grid-column: span 9; }
-.col-8  { grid-column: span 8; }
-.col-6  { grid-column: span 6; }
-.col-4  { grid-column: span 4; }
-.col-3  { grid-column: span 3; }
+.col-8 { grid-column: span 8; }
+.col-7 { grid-column: span 7; }
+.col-6 { grid-column: span 6; }
+.col-5 { grid-column: span 5; }
+.col-4 { grid-column: span 4; }
+.col-3 { grid-column: span 3; }
+.col-2 { grid-column: span 2; }
+.col-1 { grid-column: span 1; }
 
 /* ── Page header ───────────────────────────────────────────── */
 .page-header { margin: var(--sp-4) 0; }
@@ -367,7 +456,109 @@ button { font: inherit; color: inherit; }
 .rdh-arabic { font: 700 var(--fs-2xl)/1 var(--font-arabic); color: var(--ink); }
 .rdh-buckwalter { font: var(--fs-sm)/1 var(--font-mono); color: var(--ink-soft); }
 .rdh-count { color: var(--ink-muted); font-size: var(--fs-sm); margin-left: var(--sp-4); }
+.rdh-letters { color: var(--ink-soft); font-size: var(--fs-sm); margin: var(--sp-1) 0 0; font-family: var(--font-arabic); }
 .rdh-pos { color: var(--ink-soft); margin: var(--sp-1) 0 0; font-size: var(--fs-sm); }
+
+/* Occurrences section — full width below the two-col layout */
+.rd-occ-divider {
+  border: none;
+  border-top: var(--border-w) solid var(--rule);
+  margin: var(--sp-8) 0 var(--sp-6);
+}
+.rd-occ-summary {
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  margin: var(--sp-2) 0 var(--sp-4);
+}
+
+/* Occurrence row — flex column layout */
+.rd-occ-list { list-style: none; padding: 0; margin: 0; }
+.rd-occ-row {
+  padding: var(--sp-3) 0;
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.rd-occ-header {
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.rd-occ-link { font-weight: 600; color: var(--ink); }
+.rd-occ-word {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--accent);
+}
+.rd-occ-verse {
+  margin: var(--sp-1) 0 0;
+  color: var(--ink-muted);
+  font: var(--fs-md)/1.8 var(--font-arabic);
+  text-align: right;
+}
+.rd-occ-no-morph { color: var(--ink-soft); font-size: var(--fs-sm); font-style: italic; }
+
+/* Inline morphology chips — shown per occurrence row */
+.rd-occ-morph {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 0;
+  align-items: center;
+}
+.rd-morph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--sp-2);
+  background: var(--bg-sunken);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.rd-morph-chip-tag {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+}
+.rd-morph-chip-sep { color: var(--ink-soft); }
+.rd-morph-chip-type,
+.rd-morph-chip-role,
+.rd-morph-chip-case { color: var(--ink-muted); }
+.rd-occ-gloss {
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* Morphology summary table */
+.rd-morph-note {
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  margin: 0 0 var(--sp-3);
+}
+.rd-morph-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.rd-morph-table th {
+  text-align: left;
+  color: var(--ink-soft);
+  font-weight: 600;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.rd-morph-table td {
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) 0;
+  border-bottom: 1px dotted var(--rule);
+  vertical-align: middle;
+}
+.rd-morph-num { text-align: right; font-variant-numeric: tabular-nums; }
+.rd-morph-tag-cell .rd-morph-tag {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+}
 
 /* Single-column grid: all root-related data lives in one column,
  * with the concordance rendered at the bottom of that column. */

@@ -15,7 +15,6 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
-	"runtime"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -54,11 +53,6 @@ func main() {
 		_ = debug.SetGCPercent(200)
 	}
 
-	// Reasonable defaults for concurrency.
-	if runtime.NumCPU() > 4 {
-		runtime.GOMAXPROCS(4)
-	}
-
 	addr := flag.String("addr", ":8080", "HTTP listen address")
 	dbPath := flag.String("db", "./data/new/detailed-quran.db", "Path to detailed-quran.db")
 	transDir := flag.String("translations", "./data/quran/translations", "Translations directory")
@@ -71,7 +65,7 @@ func main() {
 
 	logger.Info("loading data", "path", *dbPath)
 	startLoad := time.Now()
-	q, m, r, meta, err := data.LoadAll(*dbPath)
+	q, m, r, meta, concordance, err := data.LoadAll(*dbPath)
 	if err != nil {
 		logger.Error("load data", "err", err)
 		os.Exit(1)
@@ -82,20 +76,19 @@ func main() {
 		"ayahs", q.Meta.AyahCount,
 		"masaq_entries", len(m.ByWord),
 		"roots", len(r.ByRoot),
+		"concordance_roots", len(concordance.ByRoot),
 		"duration_ms", time.Since(startLoad).Milliseconds(),
 	)
 
-	// Load verse-level translations (optional) and concordance
-	// (optional) in parallel. They're independent I/O-bound paths so
-	// running them concurrently shaves noticeable time off startup
-	// when the disk cache is cold.
+	// Load verse-level translations (optional) in background.
 	var (
-		translations     *data.Translations
-		concordance      *data.Concordance
-		loadWg           sync.WaitGroup
-		transErr, conErr error
+		translations *data.Translations
+		loadWg       sync.WaitGroup
+		transErr     error
 	)
-	loadWg.Go(func() {
+	loadWg.Add(1)
+	go func() {
+		defer loadWg.Done()
 		if *transDir == "" {
 			return
 		}
@@ -105,28 +98,13 @@ func main() {
 			return
 		}
 		translations = t
-	})
-	loadWg.Go(func() {
-		conPath := "./data/morphology/concordance.jsonl"
-		c, err := data.LoadConcordance(conPath)
-		if err != nil {
-			conErr = err
-			return
-		}
-		concordance = c
-	})
+	}()
 	loadWg.Wait()
 	if transErr != nil {
 		logger.Warn("load translations", "err", transErr)
 		translations = nil
 	} else if translations != nil {
 		logger.Info("translations loaded", "sets", len(translations.Sets))
-	}
-	if conErr != nil {
-		logger.Warn("load concordance", "err", conErr)
-		concordance = nil
-	} else if concordance != nil {
-		logger.Info("concordance loaded", "roots", len(concordance.ByRoot))
 	}
 
 	srv, err := server.New(q, m, r, meta, server.Options{

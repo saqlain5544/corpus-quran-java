@@ -38,14 +38,18 @@ func LoadTranslations(dir string) (*Translations, error) {
 	}
 	var wg sync.WaitGroup
 	var enRes, urRes result
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		s, err := loadTransSet(dir+"/en.sahih.xml", "Saheeh International", "en", "ltr")
 		enRes = result{s, err}
-	})
-	wg.Go(func() {
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		s, err := loadTransSet(dir+"/ur.junagarhi.xml", "محمد جوناگڑھی", "ur", "rtl")
 		urRes = result{s, err}
-	})
+	}()
 	wg.Wait()
 
 	if enRes.err != nil {
@@ -115,23 +119,22 @@ func loadTransSet(path, label, lang, dir string) (TranslationSet, error) {
 	}, nil
 }
 
-// stripXMLComment removes the leading XML comment block that contains
-// dashes illegal under strict XML (-- inside comments). Returns a copy
-// of the raw bytes with the comment removed.
+// stripXMLComment removes every XML comment block (<!-- ... -->) from
+// the input. Tanzil translation files contain one leading comment
+// block with dashes illegal under strict XML (-- inside comments),
+// but defensive: strip all occurrences.
 func stripXMLComment(raw []byte) []byte {
-	// Find <!-- ... --> and remove it.
-	start := bytes.Index(raw, []byte("<!--"))
-	if start < 0 {
-		return raw
+	for {
+		start := bytes.Index(raw, []byte("<!--"))
+		if start < 0 {
+			return raw
+		}
+		end := bytes.Index(raw[start:], []byte("-->"))
+		if end < 0 {
+			return raw
+		}
+		end += start + 3
+		// Recursively trim the comment and continue for any remaining.
+		raw = append(raw[:start], raw[end:]...)
 	}
-	end := bytes.Index(raw[start:], []byte("-->"))
-	if end < 0 {
-		return raw
-	}
-	end += start + 3
-	// Keep everything after the comment.
-	out := make([]byte, 0, len(raw))
-	out = append(out, raw[:start]...)
-	out = append(out, raw[end:]...)
-	return out
 }

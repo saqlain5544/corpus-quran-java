@@ -18,12 +18,12 @@ func BenchmarkLoadAll(b *testing.B) {
 		b.Fatal(err)
 	}
 	// Warm disk cache first so we measure in-memory cost, not I/O.
-	if _, _, _, _, err := LoadAll(dbPath); err != nil {
+	if _, _, _, _, _, err := LoadAll(dbPath); err != nil {
 		b.Fatal(err)
 	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, _, _, _, err := LoadAll(dbPath); err != nil {
+		if _, _, _, _, _, err := LoadAll(dbPath); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -40,11 +40,11 @@ func TestLoadAllConcurrentDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q1, m1, r1, meta1, err := LoadAll(dbPath)
+	q1, m1, r1, meta1, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatalf("LoadAll run 1: %v", err)
 	}
-	q2, m2, r2, meta2, err := LoadAll(dbPath)
+	q2, m2, r2, meta2, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatalf("LoadAll run 2: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestLoadAllReal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, m, r, meta, err := LoadAll(dbPath)
+	q, m, r, meta, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatalf("LoadAll: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestLoadAllReal(t *testing.T) {
 // (surah, ayah, word) tuple.
 func TestLookupWord(t *testing.T) {
 	dbPath, _ := filepath.Abs("../../../data/new/detailed-quran.db")
-	_, m, _, _, err := LoadAll(dbPath)
+	_, m, _, _, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestLookupWord(t *testing.T) {
 // TestLookupRootByLoc verifies the ByLoc lookup returns a real root.
 func TestLookupRootByLoc(t *testing.T) {
 	dbPath, _ := filepath.Abs("../../../data/new/detailed-quran.db")
-	_, _, r, _, err := LoadAll(dbPath)
+	_, _, r, _, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestLookupRootByLoc(t *testing.T) {
 // TestMetaNames ensures surah names are present and in order.
 func TestMetaNames(t *testing.T) {
 	dbPath, _ := filepath.Abs("../../../data/new/detailed-quran.db")
-	_, _, _, meta, err := LoadAll(dbPath)
+	_, _, _, meta, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

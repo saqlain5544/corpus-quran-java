@@ -6,13 +6,14 @@ import (
 	"testing"
 
 	"quranreader/loc"
+	"quranreader/token"
 )
 
 // ─── Tokenizer ──────────────────────────────────────────────────
 
 func TestTokenizeSimple(t *testing.T) {
 	in := "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ"
-	got := tokenize(in)
+	got := token.Tokenize(in)
 	if len(got) != 4 {
 		t.Fatalf("want 4 tokens, got %d: %+v", len(got), got)
 	}
@@ -29,7 +30,7 @@ func TestTokenizeSimple(t *testing.T) {
 func TestTokenizeTrailingSajdah(t *testing.T) {
 	// Last token is "ٱقْتَرِب ۩" — word + sajdah mark.
 	in := "كَلَّا لَا تُطِعْهُ وَٱسْجُدْ وَٱقْتَرِب ۩"
-	toks := tokenize(in)
+	toks := token.Tokenize(in)
 	if len(toks) == 0 {
 		t.Fatal("empty tokens")
 	}
@@ -51,7 +52,7 @@ func TestTokenizeTrailingSajdah(t *testing.T) {
 func TestTokenizeInlinePause(t *testing.T) {
 	// Pause marks appear inline as their own tokens.
 	in := "ذَٰلِكَ ٱلْكِتَـٰبُ لَا رَيْبَ ۛ فِيهِ"
-	toks := tokenize(in)
+	toks := token.Tokenize(in)
 	// Expected: word word word mark word
 	// (pause mark "ۛ" is a token of its own because it's space-delimited)
 	want := []struct {
@@ -84,7 +85,7 @@ func TestTokenizeIqlabHighMeem(t *testing.T) {
 	// NOT emitted as a separate mark token, so the template renders
 	// each iqlab exactly once.
 	in := "عَلَيٍّۢ بَصِيرًا"
-	toks := tokenize(in)
+	toks := token.Tokenize(in)
 	if len(toks) != 2 {
 		t.Fatalf("expected exactly 2 tokens (word + word), got %d: %+v", len(toks), toks)
 	}
@@ -108,7 +109,7 @@ func TestTokenizeIqlabHighMeem(t *testing.T) {
 func TestTokenizeIqlabLowMeem(t *testing.T) {
 	// Same as above but for the low-meem variant ۭ (U+06ED).
 	in := "ٱلْكِتَـٰبِۭ بِسْمِ"
-	toks := tokenize(in)
+	toks := token.Tokenize(in)
 	if len(toks) != 2 {
 		t.Fatalf("expected exactly 2 tokens, got %d: %+v", len(toks), toks)
 	}
@@ -126,7 +127,7 @@ func TestTokenizeStandaloneMark(t *testing.T) {
 	// start of an ayah, or a space-delimited pause mark ۖ between
 	// two words.
 	in := "ٱ ۞ بِسْمِ ۖ ٱللَّهِ"
-	toks := tokenize(in)
+	toks := token.Tokenize(in)
 	want := []struct {
 		kind, value string
 	}{
@@ -165,9 +166,9 @@ func TestSplitMark(t *testing.T) {
 		{"ٱقْتَرِب", "ٱقْتَرِب", ""},
 	}
 	for _, c := range cases {
-		w, m := splitMark(c.in)
+		w, m := token.SplitMark(c.in)
 		if w != c.wantWord {
-			t.Errorf("splitMark(%q) word = %q want %q", c.in, w, c.wantWord)
+			t.Errorf("token.SplitMark(%q) word = %q want %q", c.in, w, c.wantWord)
 		}
 		// Verify the mark set rather than the exact slice to handle
 		// edge cases with empty strings cleanly.
@@ -176,7 +177,7 @@ func TestSplitMark(t *testing.T) {
 			gotMark = m[len(m)-1]
 		}
 		if gotMark != c.wantMark {
-			t.Errorf("splitMark(%q) marks = %v want last %q", c.in, m, c.wantMark)
+			t.Errorf("token.SplitMark(%q) marks = %v want last %q", c.in, m, c.wantMark)
 		}
 	}
 }
@@ -185,12 +186,12 @@ func TestSplitMark(t *testing.T) {
 
 func TestIsBismillah(t *testing.T) {
 	cases := []string{
-		BISMILLAH_TEXT,
-		"  " + BISMILLAH_TEXT + "  ",
+		token.BISMILLAH_TEXT,
+		"  " + token.BISMILLAH_TEXT + "  ",
 		"ٱلْحَمْدُ لِلَّهِ", // not bismillah
 	}
 	for i, c := range cases {
-		got := isBismillah(c)
+		got := token.IsBismillah(c)
 		want := i < 2
 		if got != want {
 			t.Errorf("isBismillah(%q) = %v want %v", c, got, want)
@@ -225,10 +226,10 @@ func TestLoadQuranReal(t *testing.T) {
 		t.Errorf("surah 9: bismillah = %q want empty", q.Surahs[9].Bismillah)
 	}
 	// Surah 2 aya 1 should be the standalone Bismillah-as-verse-1.
-	// If the XML stores it as text equal to BISMILLAH_TEXT, our
+	// If the XML stores it as text equal to token.BISMILLAH_TEXT, our
 	// pipeline skips it; check that.
 	if ay, ok := q.Surahs[2].Ayahs[1]; ok {
-		if strings.TrimSpace(ay.Text) == BISMILLAH_TEXT {
+		if strings.TrimSpace(ay.Text) == token.BISMILLAH_TEXT {
 			t.Errorf("surah 2 aya 1 = Bismillah itself; pipeline should have skipped")
 		}
 	}

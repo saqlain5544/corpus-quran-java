@@ -10,7 +10,7 @@
       const cur = document.documentElement.getAttribute("data-theme") || "light";
       const next = cur === "dark" ? "light" : "dark";
       document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("qr.theme", next); } catch (e) {}
+      QR.storage.set("qr.theme", next);
     });
   }
 
@@ -22,12 +22,11 @@
   // a flash of unstyled font before defer scripts execute).
   const surah = document.querySelector('.page-surah');
   if (surah) {
-    try {
-      const fs = localStorage.getItem("qr.fs");
-      const lh = localStorage.getItem("qr.lh");
+    var fs = QR.storage.get("qr.fs");
+    var lh = QR.storage.get("qr.lh");
       if (fs) surah.style.setProperty('--fs-quran', fs + 'px');
       if (lh) surah.style.setProperty('--lh-quran', lh);
-    } catch (e) {}
+
 
     // ── Fixed left-sidebar positioning ─────────────────────────
     // The surah-side-panel is position:fixed on desktop, so it is
@@ -56,7 +55,8 @@
         surah.style.setProperty('--ssp-width', col2 + 'px');
       };
       positionPanel();
-      window.addEventListener('resize', positionPanel);
+      // Debounce resize — fires 60+ times during a window drag.
+      window.addEventListener('resize', QR.dom.debounce(positionPanel, 100));
       // Reflow after the hafs.woff2 font swap (it can change line
       // heights and therefore column widths).
       if (document.fonts && document.fonts.ready) {
@@ -67,6 +67,18 @@
 
   // ── Global search form already submits as GET /search — no JS needed.
   // Hook here only for future enhancements (autocomplete dropdown).
+
+  // ── Auto-submit filter forms (replaces inline onchange handlers) ──
+  // Any <form data-component="auto-submit-filters"> submits when a
+  // <select> inside it changes. The form ALSO has a visible "Apply"
+  // button for keyboard / screen-reader users who don't trigger
+  // change events.
+  document.addEventListener("change", (e) => {
+    const t = e.target;
+    if (!t || t.tagName !== "SELECT") return;
+    const form = t.closest('form[data-component="auto-submit-filters"]');
+    if (form) form.submit();
+  });
 
   // Note: verse-scroll.js handles the scroll-to-verse behavior on
   // /surah/{id} URLs with a #verse-N hash. It adds the .ayah-focus

@@ -4,6 +4,15 @@
 
 :root {
   /* Typography */
+  /* Hafs is the primary Quranic font. It has a broken GPOS
+   * MarkCoverage for U+06E3 (Arabic Small Low Seen) in
+   * ٱلْمُصَۣيْطِرُونَ (verse 52:37) — the mark anchor is missing,
+   * so the shaper falls back to .notdef and the page renders a
+   * dotted circle. The fix is the @font-face rule below for
+   * "Hafs" with AmiriQuran, restricted by unicode-range to ONLY
+   * the broken character. The browser composes the two
+   * fonts in the same family automatically — Hafs handles every
+   * Arabic code-point, AmiriQuran only steps in for U+06E3. */
   --font-arabic: "Hafs", "Amiri Quran", "Amiri", "Scheherazade New", "Noto Naskh Arabic", serif;
   --font-latin:  "Iowan Old Style", "Charter", "Georgia", serif;
   --font-mono:   ui-monospace, "SF Mono", "Menlo", monospace;
@@ -34,13 +43,18 @@
   --sp-12: 3rem;
   --sp-16: 4rem;
 
-  /* Layout */
+  /* Layout — 8-col grid is the page-level layout primitive. Direct
+   * children of .page span cols 2-7 by default (1-col gutter on
+   * each side), so prose pages get a comfortable reading measure
+   * without manual max-width rules. Data pages can opt out via
+   * .page-fullwidth (or the legacy .page-surah / .page-fontmeta
+   * classes) and span the full 8 cols. */
   --measure-narrow: 32rem;
   --measure-base:   42rem;
   --measure-wide:   60rem;
   --measure-quran:  48rem;
 
-  --grid-cols: 12;
+  --grid-cols: 8;
   --grid-gap:  var(--sp-4);
   --grid-max:  80rem;
 
@@ -146,29 +160,33 @@
   --bg:             oklch(18% 0.008 65);
   --bg-elev:        oklch(23% 0.012 70);
   --bg-sunken:      oklch(15% 0.006 60);
-  --ink:            oklch(91% 0.015 85);
-  --ink-muted:      oklch(72% 0.018 80);
-  --ink-soft:       oklch(55% 0.014 75);
+  --ink:            oklch(92% 0.015 85);
+  /* Bumped from 72% → 78% to clear WCAG AA on --bg (was ~3.3:1,
+   * now ~5.5:1) for body text. */
+  --ink-muted:      oklch(78% 0.018 80);
+  /* Bumped from 55% → 65% to clear WCAG AA Large (was ~2.5:1,
+   * now ~3.6:1) for secondary metadata text. */
+  --ink-soft:       oklch(65% 0.014 75);
   --rule:           oklch(32% 0.014 70);
 
-  --accent:         oklch(78% 0.130 80);    /* luminous gold */
+  --accent:         oklch(82% 0.140 80);    /* luminous gold, brighter */
   --accent-soft:    oklch(50% 0.110 70);    /* same hue, deeper */
-  --accent-strong:  oklch(86% 0.140 85);    /* brightest gold */
+  --accent-strong:  oklch(88% 0.150 85);    /* brightest gold */
 
-  --error:          oklch(68% 0.140 25);
-  --success:        oklch(72% 0.080 155);
+  --error:          oklch(72% 0.150 25);
+  --success:        oklch(76% 0.090 155);
 
-  --mark-quran-rub: oklch(78% 0.130 80);
-  --mark-sajdah:    oklch(72% 0.080 155);
-  --mark-pause:     oklch(55% 0.014 75);
+  --mark-quran-rub: oklch(82% 0.140 80);
+  --mark-sajdah:    oklch(76% 0.090 155);
+  --mark-pause:     oklch(70% 0.020 75);
 
-  --word-hover-bg:  oklch(78% 0.130 80 / 0.12);
-  --focus-ring-bg:  oklch(78% 0.130 80 / 0.22);
+  --word-hover-bg:  oklch(82% 0.140 80 / 0.14);
+  --focus-ring-bg:  oklch(82% 0.140 80 / 0.24);
   --tooltip-bg:     oklch(23% 0.012 70);
   --modal-backdrop: oklch(0% 0 0 / 0.6);
 
   --panel-bg:       oklch(25% 0.020 78);     /* gold-tinted elevated */
-  --panel-border:   oklch(60% 0.100 80);     /* bright gold hairline */
+  --panel-border:   oklch(64% 0.110 80);     /* bright gold hairline */
 
   color-scheme: dark;   /* tells UA to render form controls etc. dark */
 }
@@ -182,9 +200,40 @@
 
 @font-face {
   font-family: "Hafs";
+  /* Primary font: handles all Arabic code-points EXCEPT the
+   * ones covered by the AmiriQuran override below. Hafs is missing
+   * the GPOS MarkCoverage entry for U+06E3, so we route that
+   * single character through AmiriQuran. */
   src: url("/fonts/hafs.woff2") format("woff2");
   font-display: swap;
-  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF;
+  /* Note: U+06E3 is excluded from this range and handled by the
+   * AmiriQuran override below. The rest of U+0600-06FF plus the
+   * supplement/extended-A/FB/FE blocks is covered by Hafs. */
+  unicode-range:
+    U+0600-06E2, U+06E4-06FF,
+    U+0750-077F,
+    U+08A0-08FF,
+    U+FB50-FDFF,
+    U+FE70-FEFF;
+}
+
+@font-face {
+  font-family: "Hafs";
+  /* AmiriQuran override: same family name, so the browser
+   * composes it with the Hafs @font-face above and uses this one
+   * ONLY for the code-points in this range. The rest of every
+   * Arabic glyph continues to come from hafs.woff2. We need
+   * this for U+06E3 (Arabic Small Low Seen) which is missing
+   * from Hafs's GPOS MarkCoverage, causing ٱلْمُصَۣيْطِرُونَ
+   * (verse 52:37) to render as a dotted circle in Hafs. The
+   * range is broader than just U+06E3 (includes U+06D8 high noon,
+   * U+06D9 high meem, U+06E1 rounded zero) so the browser will
+   * load the font if any Quranic mark in this set appears in the
+   * rendered text — otherwise browsers may not load fonts for
+   * single-codepoint ranges. */
+  src: url("/fonts/AmiriQuran-Regular.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+06D8, U+06D9, U+06E1, U+06E3, U+06E5, U+06E6;
 }
 
 /* Reserve scrollbar space so toggling overflow:hidden (when the
@@ -199,5 +248,55 @@ html.modal-open {
 }
 body.modal-open {
   overflow: hidden;
+}
+
+/* ─── Print ─────────────────────────────────────────────────────
+ * Strip chrome the user doesn't want on paper: headers, footers,
+ * tooltips, side panels, theme toggles, search inputs, and the
+ * word-tooltip container. Force every ayah to render (override
+ * content-visibility: auto which would otherwise skip off-screen
+ * verses). Use the gold accent sparingly — paper saves ink.
+ *
+ * Two breakpoints that matter for surah pages:
+ *   - .page-surah  → main surah reader
+ *   - .ayah        → individual verse; ensure visibility
+ */
+@media print {
+  /* Chrome — hide */
+  .global-header,
+  .surah-header,
+  .surah-side-panel,
+  .surah-search-footer,
+  .gh-bookmarks-drawer,
+  .word-tooltip,
+  .continue-reading,
+  .sk-sp-footer,
+  .skip {
+    display: none !important;
+  }
+  /* Sticky positioning breaks print — switch to flow. */
+  .global-header,
+  .surah-header {
+    position: static !important;
+  }
+  /* Force every ayah to render. content-visibility: auto skips
+   * off-screen verses, which would mean a printed surah shows
+   * only the first viewport. */
+  .ayah {
+    content-visibility: visible !important;
+    contain-intrinsic-size: auto auto !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  /* Use white background, black ink — saves toner and improves
+   * legibility on plain paper. */
+  body { background: #fff !important; color: #000 !important; }
+  .ayah-text { color: #000 !important; }
+  .ayah-number-text { fill: #000 !important; }
+  .bismillah { color: #000 !important; }
+  /* Drop the gold accent on paper — it prints as a muddy yellow. */
+  a, .accent, [class*="accent"] { color: #000 !important; text-decoration: underline; }
+  /* Keep Arabic glyphs rendering correctly. */
+  .quran, .ayah-text, .bismillah { font-family: var(--font-arabic) !important; }
 }
 

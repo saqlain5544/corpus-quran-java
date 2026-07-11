@@ -28,8 +28,7 @@
     // Apply the highlight class so the gradient underline is visible
     // while the smooth-scroll runs. Stripped after a delay so it fades
     // out (mirrors the local-search highlight in surah-header.js).
-    target.classList.add("ayah-focus");
-    setTimeout(() => target.classList.remove("ayah-focus"), 2500);
+    QR.dom.focusHighlight(target, 2500);
 
     // scrollIntoView respects the CSS scroll-margin-top on .ayah
     // (8rem), which already accounts for the sticky global header

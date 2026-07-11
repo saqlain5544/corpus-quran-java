@@ -1,10 +1,23 @@
 {{define "global-header"}}<header class="global-header" role="banner">
   <div class="gh-inner">
+    {{/* Hamburger — only visible on narrow viewports. Toggles the
+        .gh-nav-drawer which contains the primary nav links in mobile
+        mode. aria-expanded reflects the toggled state for assistive
+        tech. */}}
+    <button class="gh-hamburger" data-component="gh-hamburger"
+            aria-label="Open navigation menu" aria-expanded="false"
+            aria-controls="gh-nav-drawer">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+      </svg>
+    </button>
+
     <a class="gh-brand" href="/">Quran Reader</a>
+
     <div class="gh-search-wrap">
       <form class="gh-search" role="search" data-component="global-search" method="get" action="/search">
         <input type="search" name="q" placeholder="Search…" aria-label="Search" autocomplete="off" data-component="gh-search-input">
-        <select name="type" aria-label="Search type">
+        <select name="type" aria-label="Search type" data-component="gh-search-type">
           <option value="english" selected>english</option>
           <option value="translation">translation</option>
           <option value="arabic">arabic</option>
@@ -18,6 +31,10 @@
         <button type="button" class="gh-recent-clear">Clear history</button>
       </div>
     </div>
+
+    {{/* Desktop nav — visible ≥900px via .gh-nav. Hidden on mobile in
+        favour of the slide-in .gh-nav-drawer. The bookmarks + theme
+        toggles stay in the desktop nav too. */}}
     <nav class="gh-nav" aria-label="Primary">
       <a href="/roots">Roots</a>
       <a href="/concordance">Concordance</a>
@@ -25,7 +42,26 @@
       <button class="gh-bookmarks" data-component="bookmarks-toggle" aria-label="Bookmarks" title="Bookmarks">★</button>
       <button class="gh-theme" data-component="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
     </nav>
+
+    {{/* The two icon buttons are duplicated here (and made always-
+        visible) so they stay reachable when the rest of the nav is
+        collapsed into the drawer. */}}
+    <div class="gh-actions-mobile">
+      <button class="gh-bookmarks" data-component="bookmarks-toggle" aria-label="Bookmarks" title="Bookmarks">★</button>
+      <button class="gh-theme" data-component="theme-toggle" aria-label="Toggle theme" title="Toggle theme">◐</button>
+    </div>
   </div>
+
+  {{/* Mobile nav drawer — slides down from below the header when the
+      hamburger is tapped. Closes automatically on link click or
+      Escape key. */}}
+  <nav class="gh-nav-drawer" id="gh-nav-drawer" data-component="gh-nav-drawer"
+       aria-label="Primary" hidden>
+    <a href="/roots" data-component="gh-nav-link">Roots</a>
+    <a href="/concordance" data-component="gh-nav-link">Concordance</a>
+    <a href="/about" data-component="gh-nav-link">About</a>
+  </nav>
+
   <!-- Bookmarks drawer (populated by bookmarks.js) -->
   <aside class="gh-bookmarks-drawer" data-component="bookmarks-drawer" hidden aria-label="Saved bookmarks"></aside>
 </header>{{end}}

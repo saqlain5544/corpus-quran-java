@@ -109,19 +109,11 @@ with open(MEANINGS) as f:
         root_meanings[d['root']] = d
 print(f'{len(root_meanings)} roots with meanings')
 
-print('  MASAQ official DB (reference tables)…', end=' ', flush=True)
-ref_tables = {}
-try:
-    ref_db = sqlite3.connect(f'file:{MASAQ_DB}?mode=ro', uri=True)
-    for t in ['case_mood','Case_Mood_Marker','invariable_declinable','Phrasal_Function','Phrase','Possessive_Construct','Syntactic_Role']:
-        rows = ref_db.execute(f'SELECT Tag, Desc_Eng, Desc_Ar FROM "{t}"').fetchall()
-        ref_tables[t] = {r[0]: (r[1], r[2]) for r in rows if r[0]}
-    ref_db.close()
-    total_refs = sum(len(v) for v in ref_tables.values())
-    print(f'{total_refs} reference entries')
-except Exception as e:
-    print(f'unavailable ({e})')
-    ref_tables = {}
+# ── MASAQ official DB unavailable for reference tables (deprecated) ──
+# Previously loaded ref_* lookup tables from MASAQ.db. These tables were
+# never queried by the Go runtime and have been removed per normalization
+# (2025-06-26). The morphological tag values remain in segments — they just
+# no longer have redundant description lookup tables.
 
 # ════════════════════════════════════════════════════════════════════════
 # 2. PREPARE DATABASE
@@ -158,10 +150,8 @@ CREATE TABLE words (
     verse_id INTEGER NOT NULL REFERENCES verses(id),
     word_number INTEGER NOT NULL,
     token_imla_i TEXT NOT NULL,
-    without_diacritics TEXT,
     translation TEXT,
-    root_buckwalter TEXT,
-    root_arabic TEXT,
+    root_buckwalter TEXT REFERENCES roots(root_buckwalter),
     UNIQUE(surah_id, verse_id, word_number)
 );
 CREATE TABLE segments (
@@ -183,38 +173,40 @@ CREATE TABLE segments (
     UNIQUE(word_id, segment_number)
 );
 CREATE TABLE roots (
-    root_buckwalter TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY,
+    root_buckwalter TEXT NOT NULL UNIQUE,
     root_arabic TEXT,
-    frequency INTEGER,
+    root_letters TEXT,
+    pos TEXT,
+    occurrences_quran INTEGER,
+    meaning_en_short TEXT,
     meaning_en TEXT,
     meaning_ar TEXT,
-    pos TEXT,
-    root_letters TEXT,
-    lexical_analysis TEXT
+    meaning_en_detailed TEXT,
+    meaning_trilateral TEXT,
+    meaning_ar_definition TEXT,
+    etymology TEXT,
+    derived_forms TEXT,
+    key_nominals TEXT,
+    quranic_analysis TEXT,
+    lexicographical_sources TEXT,
+    semantic_field TEXT,
+    theological_dimensions TEXT,
+    hadith_evidence TEXT,
+    cross_references TEXT
 );
 CREATE TABLE root_lemmas (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
     root_buckwalter TEXT NOT NULL REFERENCES roots(root_buckwalter),
     lemma_arabic TEXT NOT NULL,
     occurrences INTEGER,
     UNIQUE(root_buckwalter, lemma_arabic)
 );
 CREATE TABLE lemma_positions (
-    lemma_id INTEGER NOT NULL,
-    surah_id INTEGER NOT NULL,
-    verse_number INTEGER NOT NULL
+    lemma_id INTEGER NOT NULL REFERENCES root_lemmas(id),
+    verse_id INTEGER NOT NULL REFERENCES verses(id)
 );
 ''')
-
-# Reference tables from official MASAQ
-for tbl, entries in ref_tables.items():
-    tbl_name = 'ref_' + tbl.lower()
-    db.execute(f'''CREATE TABLE {tbl_name} (
-        tag TEXT PRIMARY KEY,
-        description_en TEXT,
-        description_ar TEXT
-    )''')
-    for tag, (en, ar) in entries.items():
-        db.execute(f'INSERT INTO {tbl_name} VALUES (?,?,?)', (tag, en, ar))
 
 db.execute('CREATE INDEX idx_verses_surah ON verses(surah_id)')
 db.execute('CREATE INDEX idx_words_verse ON words(verse_id)')
@@ -281,8 +273,8 @@ for surah in uth:
             root_ar = bw2ar(root_bw) if root_bw else None
 
             # Word → DB
-            cur = db.execute('INSERT INTO words (surah_id,verse_id,word_number,token_imla_i,without_diacritics,translation,root_buckwalter,root_arabic) VALUES (?,?,?,?,?,?,?,?)',
-                (si, verse_db_id, wi, token, wd, translation, root_bw, root_ar))
+            cur = db.execute('INSERT INTO words (surah_id,verse_id,word_number,token_imla_i,translation,root_buckwalter) VALUES (?,?,?,?,?,?)',
+                (si, verse_db_id, wi, token, translation, root_bw))
             word_db_id = cur.lastrowid
 
             # Word → XML
@@ -423,26 +415,74 @@ for surah in uth:
 # ════════════════════════════════════════════════════════════════════════
 print('\nPopulating roots + lemmas…', flush=True)
 
+lemmas_inserted = 0  # counter for lemma_positions rows
+
 for bw_root, freq in sorted(root_freq.items()):
     ar = bw2ar(bw_root)
-    meaning_en = meaning_ar = pos = letters = analysis = None
+    row = {
+        'root_buckwalter': bw_root,
+        'root_arabic': ar,
+        'occurrences_quran': freq,
+        'meaning_en': '',
+        'meaning_ar': '',
+        'meaning_ar_definition': '',
+        'etymology': None,
+        'hadith_evidence': None,
+    }
     if bw_root in root_meanings:
         rm = root_meanings[bw_root]
         m = rm.get('meaning', {})
-        meaning_en = m.get('en', '')
-        meaning_ar = m.get('ar', '')
-        pos = rm.get('pos', '')
-        letters = rm.get('root_letters', '')
-        analysis = json.dumps(rm.get('lexical_analysis', {}), ensure_ascii=False) if rm.get('lexical_analysis') else None
+        
+        row['id'] = rm.get('id')
+        row['pos'] = rm.get('pos', '')
+        row['root_letters'] = rm.get('root_letters', '')
+        row['meaning_en_short'] = m.get('en_short', '') or ''
+        row['meaning_en'] = m.get('en', '') or ''
+        row['meaning_ar'] = m.get('ar', '') or ''
+        row['meaning_ar_definition'] = m.get('ar_definition', '') or ''
+        row['meaning_en_detailed'] = m.get('en_detailed', '') or ''
+        row['meaning_trilateral'] = m.get('trilateral_meaning', '') or ''
+        
+        # Fallbacks
+        if not row['meaning_en']:
+            row['meaning_en'] = m.get('en_short', '') or ''
+        if not row['meaning_ar']:
+            row['meaning_ar'] = row['meaning_ar_definition']
+        
+        # JSON columns — store entire objects (only those kept in schema)
+        for col in ('etymology', 'hadith_evidence'):
+            val = rm.get(col)
+            if val:
+                row[col] = json.dumps(val, ensure_ascii=False)
+
+    db.execute('''INSERT OR REPLACE INTO roots 
+        (id, root_buckwalter, root_arabic, root_letters, pos, occurrences_quran,
+         meaning_en, meaning_ar, meaning_ar_definition,
+         etymology, hadith_evidence)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)''',
+        (row.get('id'), row['root_buckwalter'], row['root_arabic'], row.get('root_letters'),
+         row.get('pos'), row['occurrences_quran'],
+         row['meaning_en'], row['meaning_ar'], row['meaning_ar_definition'],
+         row['etymology'], row['hadith_evidence']))
     
-    db.execute('INSERT OR REPLACE INTO roots (root_buckwalter,root_arabic,frequency,meaning_en,meaning_ar,pos,root_letters,lexical_analysis) VALUES (?,?,?,?,?,?,?,?)',
-        (bw_root, ar, freq, meaning_en, meaning_ar, pos, letters, analysis))
-    
-    # Lemmas from concordance
+    # Lemmas from concordance (inserted after roots + verses are populated)
     if bw_root in root_lemmas:
         for lemma_ar, lemma_data in root_lemmas[bw_root]['lemmas'].items():
-            db.execute('INSERT OR REPLACE INTO root_lemmas (root_buckwalter,lemma_arabic,occurrences) VALUES (?,?,?)',
+            cur = db.execute('INSERT OR REPLACE INTO root_lemmas (root_buckwalter,lemma_arabic,occurrences) VALUES (?,?,?)',
                 (bw_root, lemma_ar, lemma_data.get('total_occurrences', 0)))
+            lemma_id = cur.lastrowid
+            for occ in lemma_data.get('occurrences', []):
+                parts = occ.split(':')
+                if len(parts) == 2:
+                    try:
+                        s, v = int(parts[0]), int(parts[1])
+                        vid = db.execute('SELECT id FROM verses WHERE surah_id=? AND verse_number=?', (s, v)).fetchone()
+                        if vid:
+                            db.execute('INSERT INTO lemma_positions (lemma_id, verse_id) VALUES (?,?)',
+                                (lemma_id, vid[0]))
+                            lemmas_inserted += 1
+                    except (ValueError, IndexError):
+                        pass
 
 # ════════════════════════════════════════════════════════════════════════
 # 5. WRITE OUTPUTS
@@ -477,7 +517,7 @@ print(f'''
   Segments (aligned):       {stats['segments']:,}
   Roots (with meanings):    {len(root_freq):,}
   Root lemmas:              {sum(len(rl['lemmas']) for rl in root_lemmas.values()):,}
-  Reference tag tables:     {sum(len(r) for r in ref_tables.values())}
+  Lemma positions:          {lemmas_inserted:,}
   Fallback segments:        {stats['fallback']}
   
   Outputs:

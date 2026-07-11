@@ -21,18 +21,16 @@
   const STORAGE_KEY = "qr.lastRead";
 
   function load() {
+    var raw = QR.storage.get(STORAGE_KEY);
+    if (!raw) return null;
     try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return null;
       var v = JSON.parse(raw);
       if (!v || typeof v.surah !== "number" || typeof v.ayah !== "number") return null;
       return v;
     } catch (e) { return null; }
   }
   function save(v) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(v));
-    } catch (e) { /* private mode */ }
+    QR.storage.setJSON(STORAGE_KEY, v);
   }
 
   // ── Surah page: capture the user's current ayah ─────────────
@@ -133,11 +131,10 @@
 
   // Bookmark click is a strong "I'm here" signal — save immediately.
   document.addEventListener("click", function (e) {
-    if (e.target.closest('[data-component="ayah-bookmark"]')) {
+    var btn = QR.dom.closestBookmark(e.target);
+    if (btn) {
       var s = currentSurah();
       if (!s || !s.surah) return;
-      // Use the ayah from the button's dataset.
-      var btn = e.target.closest('[data-component="ayah-bookmark"]');
       var ayah = parseInt(btn.dataset.ayah, 10);
       save({ surah: s.surah, ayah: ayah, ts: Date.now() });
     }

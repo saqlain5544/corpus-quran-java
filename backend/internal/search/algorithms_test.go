@@ -20,7 +20,7 @@ func loadTestData(t *testing.T) (*types.Quran, *types.MasaqIndex, *types.RootsIn
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, m, r, _, err := qdata.LoadAll(dbPath)
+	q, m, r, _, _, err := qdata.LoadAll(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,8 +345,8 @@ func TestRootsListPagination(t *testing.T) {
 // made the "Ascending" UI option a no-op.
 func TestOccurrencesForRootSortAsc(t *testing.T) {
 	q, _, roots := loadTestData(t)
-	desc := OccurrencesForRoot("qwl", roots, q, 0, false)
-	asc := OccurrencesForRoot("qwl", roots, q, 0, true)
+	desc := OccurrencesForRoot("qwl", roots, q, nil, 0, false)
+	asc := OccurrencesForRoot("qwl", roots, q, nil, 0, true)
 	if len(desc) < 2 || len(asc) < 2 {
 		t.Fatalf("need ≥2 occurrences: desc=%d asc=%d", len(desc), len(asc))
 	}
@@ -505,7 +505,7 @@ func TestEnglishSearchUsesInvertedIndex(t *testing.T) {
 		query string
 		want  int
 	}{
-		{"rain", 31},          // ground truth from Python prototype
+		{"rain", 31}, // ground truth from Python prototype
 		{"mercy", 167},
 		{"restrained", 11},
 		{"he-ran", 1},         // the (37,140,2) fuzzy hit

@@ -219,19 +219,19 @@
 
   // Event delegation on the document (covers all surah pages).
   document.addEventListener("mouseover", e => {
-    const w = e.target.closest('[data-component="word"]');
+    const w = QR.dom.closestWord(e.target);
     if (w) showOn(w);
   });
   document.addEventListener("mouseout", e => {
-    const w = e.target.closest('[data-component="word"]');
+    const w = QR.dom.closestWord(e.target);
     if (w) hideTooltip();
   });
   document.addEventListener("focusin", e => {
-    const w = e.target.closest('[data-component="word"]');
+    const w = QR.dom.closestWord(e.target);
     if (w) showOn(w);
   });
   document.addEventListener("focusout", e => {
-    const w = e.target.closest('[data-component="word"]');
+    const w = QR.dom.closestWord(e.target);
     if (w) hideTooltip();
   });
 
@@ -243,9 +243,5 @@
     if (e.key === "Escape") hideTooltip();
   });
 
-  function escape(s) {
-    if (s == null) return "";
-    return String(s).replace(/[&<>"']/g, c =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
+  var escape = QR.dom.escape;
 })();

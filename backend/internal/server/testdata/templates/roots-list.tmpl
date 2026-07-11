@@ -4,21 +4,20 @@
   <header class="layout-header">
     <h1>Roots</h1>
     <div class="layout-header-actions surface surface--bare">
-      <form class="cluster" method="get" action="/roots">
-        <label>Surah:
-          <select name="surah" onchange="this.form.submit()">
-            <option value="">All</option>
-            {{range .SurahOpts}}
-            <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
-            {{end}}
-          </select>
-        </label>
-        <label>Sort:
-          <select name="sort" onchange="this.form.submit()">
-            <option value="desc" {{if not .Asc}}selected{{end}}>Most frequent first</option>
-            <option value="asc" {{if .Asc}}selected{{end}}>Least frequent first</option>
-          </select>
-        </label>
+      <form class="cluster" method="get" action="/roots" data-component="auto-submit-filters">
+        <label for="roots-filter-surah">Surah:</label>
+        <select id="roots-filter-surah" name="surah">
+          <option value="">All</option>
+          {{range .SurahOpts}}
+          <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
+          {{end}}
+        </select>
+        <label for="roots-filter-sort">Sort:</label>
+        <select id="roots-filter-sort" name="sort">
+          <option value="desc" {{if not .Asc}}selected{{end}}>Most frequent first</option>
+          <option value="asc" {{if .Asc}}selected{{end}}>Least frequent first</option>
+        </select>
+        <button type="submit" class="filter-apply">Apply</button>
       </form>
     </div>
   </header>

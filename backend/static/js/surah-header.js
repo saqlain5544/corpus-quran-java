@@ -69,8 +69,7 @@
     const ay = srMatches[srIdx];
     if (!ay) return;
     ay.scrollIntoView({ behavior: "smooth", block: "start" });
-    ay.classList.add("ayah-focus");
-    setTimeout(() => ay.classList.remove("ayah-focus"), 2500);
+    QR.dom.focusHighlight(ay, 2500);
     updateFooter();
   }
 
@@ -98,44 +97,49 @@
     input.style.setProperty("--fill", pct.toFixed(1) + "%");
   }
 
+  // ── ArrowLeft / ArrowRight — prev/next surah navigation ────────
+  // The .sh-prev / .sh-next anchors exist in the markup; we just
+  // bind keyboard shortcuts so a reader deep in the Quran can
+  // navigate between surahs without scrolling back to the header.
+  // Only fires when no input/select/contenteditable is focused.
+  const prevLink = surahEl.querySelector(".sh-prev[href]:not(.disabled)");
+  const nextLink = surahEl.querySelector(".sh-next[href]:not(.disabled)");
+  if (prevLink || nextLink) {
+    document.addEventListener("keydown", function (e) {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      const a = document.activeElement;
+      if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA"
+                || a.tagName === "SELECT" || a.isContentEditable)) return;
+      if (e.key === "ArrowLeft" && prevLink) {
+        e.preventDefault();
+        prevLink.click();
+      } else if (e.key === "ArrowRight" && nextLink) {
+        e.preventDefault();
+        nextLink.click();
+      }
+    });
+  }
+
   // ── Restore persisted values ─────────────────────────────────
-  try {
-    const fs = localStorage.getItem("qr.fs");
-    const lh = localStorage.getItem("qr.lh");
-    if (fs && fontInput && fontOutput) {
-      surahEl.style.setProperty("--fs-quran", fs + "px");
-      syncSlider(fontInput, fontOutput, fs, "px");
-    } else if (fontInput && fontOutput) {
-      syncSlider(fontInput, fontOutput, fontInput.value, "px");
-    }
-    if (lh && lineInput && lineOutput) {
-      surahEl.style.setProperty("--lh-quran", lh);
-      syncSlider(lineInput, lineOutput, lh, "");
-    } else if (lineInput && lineOutput) {
-      syncSlider(lineInput, lineOutput, lineInput.value, "");
-    }
-  } catch (e) {}
+  var fs = QR.storage.get("qr.fs");
+  var lh = QR.storage.get("qr.lh");
+  if (fs && fontInput && fontOutput) {
+    surahEl.style.setProperty("--fs-quran", fs + "px");
+    syncSlider(fontInput, fontOutput, fs, "px");
+  } else if (fontInput && fontOutput) {
+    syncSlider(fontInput, fontOutput, fontInput.value, "px");
+  }
+  if (lh && lineInput && lineOutput) {
+    surahEl.style.setProperty("--lh-quran", lh);
+    syncSlider(lineInput, lineOutput, lh, "");
+  } else if (lineInput && lineOutput) {
+    syncSlider(lineInput, lineOutput, lineInput.value, "");
+  }
 
   // ── Slider persistence ──────────────────────────────────────
-  // Sliders fire `input` events at ~60Hz while dragging. Writing
-  // to localStorage on every event is wasteful — localStorage
-  // writes are synchronous and on slow disks (iOS Safari in
-  // particular) can take 50-100ms each. We keep the CSS var +
-  // slider visuals IMMEDIATE so the user gets feedback at 60Hz,
-  // but debounce the actual write to once-per-idle (50ms after
-  // the last input event).
-  //
-  // The pattern: setTimeout/clearTimeout with a single
-  // module-scoped timer per slider key. Writing happens at most
-  // ~20 times/sec worst-case, in practice 1-2 times per drag.
-  const sliderSaveTimers = {};
-  function debouncedSliderPersist(key, value) {
-    if (sliderSaveTimers[key]) clearTimeout(sliderSaveTimers[key]);
-    sliderSaveTimers[key] = setTimeout(() => {
-      try { localStorage.setItem(key, value); } catch (e) {}
-      delete sliderSaveTimers[key];
-    }, 50);
-  }
+  var debouncedSliderPersist = QR.dom.debounce(function(key, value) {
+    QR.storage.set(key, value);
+  }, 50);
 
   // ── Font-size ────────────────────────────────────────────────
   if (fontInput && fontOutput) {
@@ -171,16 +175,14 @@
           el.hidden = el.dataset.transIdx !== idx;
         });
       }
-      try { localStorage.setItem("qr.transIdx", idx); } catch (e) {}
+      QR.storage.set("qr.transIdx", String(idx));
     });
     // Restore persisted value
-    try {
-      const saved = localStorage.getItem("qr.transIdx");
-      if (saved !== null) {
-        transSelect.value = saved;
-        transSelect.dispatchEvent(new Event("change"));
-      }
-    } catch (e) {}
+    var saved = QR.storage.get("qr.transIdx");
+    if (saved !== "") {
+      transSelect.value = saved;
+      transSelect.dispatchEvent(new Event("change"));
+    }
   }
 
   // ── Local search with result navigation ──────────────────────

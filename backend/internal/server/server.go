@@ -8,11 +8,9 @@ import (
 	"cmp"
 	"fmt"
 	"html/template"
-	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"path"
 	"runtime"
 	"slices"
 	"sort"
@@ -35,6 +33,7 @@ type Server struct {
 	meta         *types.Meta
 	translations *data.Translations
 	concordance  *data.Concordance
+	fontMeta     FontMetaPageData
 
 	templates map[string]*template.Template
 	staticFS  fs.FS
@@ -117,55 +116,18 @@ func New(q *types.Quran, m *types.MasaqIndex, r *types.RootsIndex, meta *types.M
 		s.fontsFS = sub
 	}
 
+	// Font-meta debug page. Loads the embedded cmap JSON (built by
+	// scripts/extract-font-cmaps.py) once at startup and assembles
+	// the page data. If the cmap JSON can't be parsed the page is
+	// still served but the "what's in this font" sections are empty.
+	hafsCmap, amiriCmap, err := loadFontCMaps()
+	if err != nil {
+		s.log.Warn("fontcmaps unavailable; /meta/fonts will be partial", "err", err)
+	}
+	s.fontMeta = buildFontMeta(q, hafsCmap, amiriCmap)
+
 	return s, nil
 }
-
-// asFS is no longer needed — Options.FS are expected to satisfy
-// fs.ReadFileFS directly (embed.FS does so natively). Kept as a
-// type-assertion helper in case future Options.FS don't.
-func asFS(r ReadFS) fs.FS {
-	if f, ok := r.(fs.FS); ok {
-		return f
-	}
-	return rfsAdapter{r}
-}
-
-type rfsAdapter struct{ ReadFS }
-
-func (r rfsAdapter) Open(name string) (fs.File, error) {
-	b, err := r.ReadFS.ReadFile(name)
-	if err != nil {
-		return nil, err
-	}
-	return &rfsFile{data: b, name: name}, nil
-}
-
-type rfsFile struct {
-	data []byte
-	name string
-	off  int
-}
-
-func (f *rfsFile) Read(p []byte) (int, error) {
-	if f.off >= len(f.data) {
-		return 0, io.EOF
-	}
-	n := copy(p, f.data[f.off:])
-	f.off += n
-	return n, nil
-}
-func (f *rfsFile) Close() error               { return nil }
-func (f *rfsFile) Stat() (fs.FileInfo, error) { return rfsInfo{f}, nil }
-func (f *rfsFile) Name() string               { return f.name }
-
-type rfsInfo struct{ f *rfsFile }
-
-func (i rfsInfo) Name() string       { return i.f.name }
-func (i rfsInfo) Size() int64        { return int64(len(i.f.data)) }
-func (i rfsInfo) Mode() fs.FileMode  { return 0644 }
-func (i rfsInfo) ModTime() time.Time { return time.Time{} }
-func (i rfsInfo) IsDir() bool        { return false }
-func (i rfsInfo) Sys() any           { return nil }
 
 // Handler returns the http.Handler ready to serve.
 func (s *Server) Handler() http.Handler {
@@ -183,6 +145,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /root/detailed/{root}", s.handleRootDetail)
 	mux.HandleFunc("GET /about", s.handleAbout)
 	mux.HandleFunc("GET /concordance", s.handleConcordance)
+	mux.HandleFunc("GET /meta/fonts", s.handleFontMeta)
 
 	// APIs.
 	mux.HandleFunc("GET /api/word", s.handleAPIWord)
@@ -193,138 +156,46 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 
 	// Static + fonts.
-	mux.Handle("GET /static/", noCache(http.StripPrefix("/static/", http.FileServerFS(s.staticFS))))
-	mux.Handle("GET /fonts/", noCache(http.StripPrefix("/fonts/", http.FileServerFS(s.fontsFS))))
+	mux.Handle("GET /static/", immutableCache(http.StripPrefix("/static/", http.FileServerFS(s.staticFS))))
+	mux.Handle("GET /fonts/", immutableCache(http.StripPrefix("/fonts/", http.FileServerFS(s.fontsFS))))
 
-	// Wrap the mux in a 404 interceptor. Go 1.22 ServeMux doesn't
-	// support a wildcard catch-all alongside "/" (they conflict at
-	// registration time), and NotFoundHandler isn't a field — it's
-	// a helper function. So we wrap the mux and check the response
-	// status: if it's a 404 with the default plain-text body, we
-	// know no route matched, so render our styled error page.
-	// API routes get JSON 404s instead (handled in the wrapper).
-	return s.notFoundInterceptor(s.recovery(s.logging(mux)))
+	// Catch-all 404 — registered LAST so the more-specific patterns
+	// above win under Go 1.22's longest-match-wins mux. Routes that
+	// don't match anything fall through here and render the styled
+	// error page (HTML) or JSON 404 (for /api/ paths).
+	mux.HandleFunc("GET /{rest...}", s.handleCatchAll)
+
+	return s.recovery(s.logging(mux))
 }
 
-// notFoundInterceptor wraps a handler so any 404 response that
-// the mux produced (because no route matched) is replaced with
-// our styled HTML error page for browser requests, or a JSON 404
-// for API requests. This is the cleanest way to customize 404s
-// with Go 1.22+ ServeMux.
-//
-// We use a full-buffering approach: capture the entire response
-// into memory, then forward it only if it's NOT a default Go 404
-// (which is the literal "404 page not found\n" body that ServeMux
-// emits when no route matches).
-//
-// Cost: tiny — the mux's default 404 body is 19 bytes; a custom
-// 404 from one of our handlers is usually a few KB. We never buffer
-// legitimate 200 responses for routes that DO match, because those
-// don't go through our interceptor path (they pass through to the
-// inner handler).
-func (s *Server) notFoundInterceptor(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bw := &bufferedWriter{ResponseWriter: w}
-		next.ServeHTTP(bw, r)
-		// Detect the mux's default 404: it's the literal text
-		// "404 page not found\n" with status 404. If we see that,
-		// render our own page instead.
-		if bw.status == http.StatusNotFound && !bw.customBody {
-			isAPI := strings.HasPrefix(r.URL.Path, "/api/")
-			// Clear the response buffer so we can write fresh.
-			bw.buffer.Reset()
-			bw.headers = nil
-			bw.status = 0
-			if isAPI {
-				s.respondJSON(w, http.StatusNotFound, map[string]string{
-					"error": "not found",
-					"path":  r.URL.Path,
-				})
-			} else {
-				s.handleNotFound(w, r)
-			}
-			return
-		}
-		// Otherwise, forward the buffered response to the real client.
-		bw.flush()
-	})
-}
-
-// bufferedWriter captures the entire response in memory so we can
-// inspect it and decide whether to forward as-is or replace with
-// our styled 404 page. It implements http.ResponseWriter so the
-// inner handler can call WriteHeader / Write as usual.
-type bufferedWriter struct {
-	http.ResponseWriter
-	headers   http.Header
-	buffer    *bytes.Buffer
-	status    int
-	customBody bool
-}
-
-// Header returns the buffered writer's header map. We keep our own
-// copy so the inner handler can mutate it freely without touching
-// the real response until we flush.
-func (bw *bufferedWriter) Header() http.Header {
-	if bw.headers == nil {
-		bw.headers = make(http.Header)
+// handleCatchAll is the catch-all 404 handler. Browser requests
+// get the styled HTML error page; API requests get a JSON 404.
+func (s *Server) handleCatchAll(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.respondJSON(w, http.StatusNotFound, map[string]string{
+			"error": "not found",
+			"path":  r.URL.Path,
+		})
+		return
 	}
-	return bw.headers
-}
-
-// WriteHeader buffers the status code. We don't call the real
-// WriteHeader until flush() so we can replace the response entirely.
-func (bw *bufferedWriter) WriteHeader(code int) {
-	bw.status = code
-}
-
-// Write buffers body bytes. The first non-empty Write marks the
-// response as having a "custom" body (i.e. not the mux's default
-// 404 placeholder). On flush() we forward everything as-is.
-func (bw *bufferedWriter) Write(b []byte) (int, error) {
-	if bw.status == 0 {
-		bw.status = http.StatusOK
-	}
-	if bw.buffer == nil {
-		bw.buffer = &bytes.Buffer{}
-	}
-	if bw.buffer.Len() == 0 && string(b) == "404 page not found\n" {
-		// Mux's default 404 — don't mark as custom.
-		bw.buffer.Write(b)
-		return len(b), nil
-	}
-	bw.customBody = true
-	bw.buffer.Write(b)
-	return len(b), nil
-}
-
-// flush forwards the buffered response to the real client.
-func (bw *bufferedWriter) flush() {
-	if bw.headers != nil {
-		for k, vs := range bw.headers {
-			for _, v := range vs {
-				bw.ResponseWriter.Header().Add(k, v)
-			}
-		}
-	}
-	if bw.status != 0 {
-		bw.ResponseWriter.WriteHeader(bw.status)
-	}
-	if bw.buffer != nil {
-		bw.ResponseWriter.Write(bw.buffer.Bytes())
-	}
+	s.handleNotFound(w, r)
 }
 
 // ─── Middleware ────────────────────────────────────────────────
 
-// noCache wraps a handler so every response carries headers that
-// force the browser to revalidate on every request. Static assets
-// are embedded in the binary at compile time — there's no benefit
-// to caching them client-side, and we want CSS/JS edits to land on
-// the next reload without a hard refresh.
-func noCache(next http.Handler) http.Handler {
+// immutableCache wraps a handler so every response carries headers
+// that let the browser cache the asset forever. Static assets
+// (CSS, JS, fonts) are embedded in the binary at compile time via
+// go:embed — they NEVER change at runtime. Setting an immutable
+// 1-year max-age avoids ~50 KB of font re-fetch and ~50 KB of
+// CSS/JS revalidation per page load.
+//
+// If we ever want to ship asset updates without a binary release,
+// add a content hash to the URL (/static/main.{hash}.css) and bump
+// the URL — the old URL stays cached.
+func immutableCache(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-cache, must-revalidate")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -349,7 +220,7 @@ func (s *Server) recovery(next http.Handler) http.Handler {
 		defer func() {
 			if rec := recover(); rec != nil {
 				s.log.Error("panic", "err", rec, "path", r.URL.Path)
-				s.respondError(w, http.StatusInternalServerError, "internal error")
+				s.respondError(w, r, http.StatusInternalServerError, "internal error")
 			}
 		}()
 		next.ServeHTTP(w, r)
@@ -381,10 +252,10 @@ func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusNotFound)
 	data := struct {
-		Title     string
-		Status    int
-		Msg       string
-		Path      string
+		Title  string
+		Status int
+		Msg    string
+		Path   string
 	}{
 		Title:  "Page not found",
 		Status: http.StatusNotFound,
@@ -459,12 +330,12 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil || id < 1 || id > 114 {
-		s.respondError(w, http.StatusNotFound, "Surah not found")
+		s.respondError(w, r, http.StatusNotFound, "Surah not found")
 		return
 	}
 	surah := s.quran.Surahs[id]
 	if surah == nil {
-		s.respondError(w, http.StatusNotFound, "Surah not found")
+		s.respondError(w, r, http.StatusNotFound, "Surah not found")
 		return
 	}
 
@@ -491,15 +362,17 @@ func (s *Server) handleSurah(w http.ResponseWriter, r *http.Request) {
 		for _, t := range ay.Tokens {
 			if t.Kind == "word" {
 				key := loc.Key(id, an, t.WordNo)
-				if bw, ok := s.roots.ByLoc[key]; ok {
-					wr[t.WordNo] = bw
+				if s.roots != nil {
+					if bw, ok := s.roots.ByLoc[key]; ok {
+						wr[t.WordNo] = bw
+					}
 				}
 			}
 		}
 		return ayahEntry{Ayah: ay, WordRoots: wr}
 	}
 
-var (
+	var (
 		wg  sync.WaitGroup
 		sem = make(chan struct{}, runtime.GOMAXPROCS(0))
 	)
@@ -509,12 +382,14 @@ var (
 			end = totalAyahs
 		}
 		sem <- struct{}{}
-		wg.Go(func() {
+		wg.Add(1)
+		go func() {
 			defer func() { <-sem }()
+			defer wg.Done()
 			for an := start; an <= end; an++ {
 				ayahEntries[an-1] = buildEntry(an)
 			}
-		})
+		}()
 	}
 	wg.Wait()
 
@@ -569,37 +444,6 @@ var (
 		data.Next = s.quran.Surahs[id+1]
 	}
 	s.render(w, "surah.tmpl", data)
-}
-
-func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	typ := r.URL.Query().Get("type")
-	if typ == "" {
-		typ = "english"
-	}
-	data := struct {
-		Title   string
-		Query   string
-		Type    string
-		Results []search.SearchResult
-	}{Title: "Search", Query: q, Type: typ}
-	if q != "" {
-		switch typ {
-		case "root":
-			data.Results = search.Root(q, s.roots, s.quran, 2000)
-		case "arabic":
-			data.Results = search.Arabic(q, s.masaq, s.quran, 5000, 0)
-		case "translation":
-			data.Results = search.Translation(q, s.masaq, s.quran, 5000, 0)
-		case "lemma":
-			data.Results = search.Lemma(q, s.masaq, s.quran, 5000, 0)
-		default:
-			typ = "english"
-			data.Type = typ
-			data.Results = search.English(q, s.masaq, s.quran, 5000, 0)
-		}
-	}
-	s.render(w, "search.tmpl", data)
 }
 
 func (s *Server) handleRootsList(w http.ResponseWriter, r *http.Request) {
@@ -657,6 +501,10 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 		if hit, ok := s.roots.ByArabic[types.NormalizeArabicRoot(root)]; ok {
 			root = hit
 			entry = s.roots.ByRoot[root]
+			if entry == nil {
+				s.respondError(w, r, http.StatusNotFound, "Root not found")
+				return
+			}
 		} else {
 			// Last-chance: transliterate Arabic input to Buckwalter
 			// (mirrors search.Root so /root/detailed/قول resolves
@@ -669,13 +517,13 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			s.respondError(w, http.StatusNotFound, "Root not found")
+			s.respondError(w, r, http.StatusNotFound, "Root not found")
 			return
 		}
 	}
 	filterSurah, _ := strconv.Atoi(r.URL.Query().Get("surah"))
 	asc := r.URL.Query().Get("sort") == "asc"
-	occurrences := search.OccurrencesForRoot(root, s.roots, s.quran, filterSurah, asc)
+	occurrences := search.OccurrencesForRoot(root, s.roots, s.quran, s.masaq, filterSurah, asc)
 
 	// Build concordance lemmas with verse text + translations.
 	type lemmaOccurrence struct {
@@ -734,7 +582,9 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 				if end > len(ins) {
 					end = len(ins)
 				}
-				wg.Go(func() {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
 					for i := start; i < end; i++ {
 						in := ins[i]
 						occList := make([]lemmaOccurrence, 0, len(in.inner.Occurrences))
@@ -743,8 +593,11 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 							if len(parts) != 2 {
 								continue
 							}
-							sNum, _ := strconv.Atoi(parts[0])
-							vNum, _ := strconv.Atoi(parts[1])
+							sNum, sErr := strconv.Atoi(parts[0])
+							vNum, vErr := strconv.Atoi(parts[1])
+							if sErr != nil || vErr != nil || sNum < 1 || sNum > 114 || vNum < 1 {
+								continue
+							}
 							lo := lemmaOccurrence{
 								Ref:       sv,
 								Link:      fmt.Sprintf("/surah/%d#verse-%d", sNum, vNum),
@@ -763,7 +616,7 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 							Verses:      occList,
 						}
 					}
-				})
+				}()
 			}
 			wg.Wait()
 
@@ -823,6 +676,47 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// MorphSummary aggregates morphological pattern counts across all
+	// occurrences so the template can render a TAG → count → % table.
+	type morphTagCount struct {
+		Tag   string
+		Type  string
+		Count int
+		Pct   float64
+	}
+	var ms []morphTagCount
+	if len(occurrences) > 0 {
+		raw := make(map[string]int) // key = "TAG|TYPE"
+		for _, occ := range occurrences {
+			for _, seg := range occ.MorphSegments {
+				if seg.MorphTag == "" && seg.MorphType == "" {
+					continue
+				}
+				key := seg.MorphTag + "|" + seg.MorphType
+				raw[key]++
+			}
+		}
+		total := 0
+		for _, c := range raw {
+			total += c
+		}
+		for k, c := range raw {
+			parts := strings.SplitN(k, "|", 2)
+			tag, typ := k, ""
+			if len(parts) == 2 {
+				tag, typ = parts[0], parts[1]
+			}
+			var pct float64
+			if total > 0 {
+				pct = float64(c) * 100 / float64(total)
+			}
+			ms = append(ms, morphTagCount{Tag: tag, Type: typ, Count: c, Pct: pct})
+		}
+		sort.Slice(ms, func(i, j int) bool {
+			return ms[i].Count > ms[j].Count
+		})
+	}
+
 	data := struct {
 		Title             string
 		Root              string
@@ -830,10 +724,11 @@ func (s *Server) handleRootDetail(w http.ResponseWriter, r *http.Request) {
 		Occurrences       []search.SearchResult
 		ConLemmas         []concordLemma
 		SurahDistribution []surahDist
+		MorphSummary      []morphTagCount
 		FilterSurah       int
 		Asc               bool
 		SurahOpts         []surahOption
-	}{Title: entry.Buckwalter, Root: root, Entry: entry, Occurrences: occurrences, ConLemmas: conLemmas, SurahDistribution: surahDistribution, FilterSurah: filterSurah, Asc: asc, SurahOpts: surahOpts}
+	}{Title: entry.Buckwalter, Root: root, Entry: entry, Occurrences: occurrences, ConLemmas: conLemmas, SurahDistribution: surahDistribution, MorphSummary: ms, FilterSurah: filterSurah, Asc: asc, SurahOpts: surahOpts}
 	s.render(w, "root-detail.tmpl", data)
 }
 
@@ -859,9 +754,17 @@ func (s *Server) handleAbout(w http.ResponseWriter, r *http.Request) {
 	}{Title: "About"})
 }
 
+// handleFontMeta serves /meta/fonts — the font-debug page that
+// visualises every codepoint in the Quran text and every glyph in
+// each font's cmap. See font_meta.go for the data shape and
+// font_meta_load.go for how the cmaps are sourced.
+func (s *Server) handleFontMeta(w http.ResponseWriter, r *http.Request) {
+	s.render(w, "font_meta.tmpl", s.fontMeta)
+}
+
 func (s *Server) handleConcordance(w http.ResponseWriter, r *http.Request) {
 	if s.concordance == nil {
-		s.respondError(w, http.StatusNotFound, "Concordance data not loaded")
+		s.respondError(w, r, http.StatusNotFound, "Concordance data not loaded")
 		return
 	}
 	// Pagination.
@@ -877,7 +780,7 @@ func (s *Server) handleConcordance(w http.ResponseWriter, r *http.Request) {
 		// bouncing the user back to page 1 (which would also leave
 		// the rendered "Page N" indicator inconsistent with the
 		// actual data shown).
-		s.respondError(w, http.StatusNotFound, fmt.Sprintf("No page %d (have %d pages)", page, (total+pageSize-1)/pageSize))
+		s.respondError(w, r, http.StatusNotFound, fmt.Sprintf("No page %d (have %d pages)", page, (total+pageSize-1)/pageSize))
 		return
 	}
 	end := start + pageSize
@@ -930,463 +833,6 @@ func (s *Server) handleConcordance(w http.ResponseWriter, r *http.Request) {
 
 // ─── API handlers ──────────────────────────────────────────────
 
-type apiWordResponse struct {
-	Surah       int                  `json:"surah"`
-	Ayah        int                  `json:"ayah"`
-	Word        int                  `json:"word"`
-	WordText    string               `json:"word_text"`
-	Lemma       string               `json:"lemma"`       // bare stem, no diacritics
-	Gloss       string               `json:"gloss"`       // combined segment glosses
-	Translation string               `json:"translation"` // word-level English translation
-	POS         string               `json:"pos"`         // V / N / P
-	Function    string               `json:"function"`    // grammatical function, friendly English
-	Segments    []types.MasaqSegment `json:"segments"`
-	Root        *rootSummary         `json:"root,omitempty"`
-}
-
-type rootSummary struct {
-	Buckwalter string `json:"buckwalter"`
-	Arabic     string `json:"arabic"`  // e.g. أَلِه
-	Letters    string `json:"letters"` // space-separated consonants: أ ل ه
-	POS        string `json:"pos"`     // V / N / P
-	MeaningEN  string `json:"meaning_en"`
-	MeaningAR  string `json:"meaning_ar"`
-	Link       string `json:"link"`
-}
-
-func (s *Server) handleAPIWord(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	surah, _ := strconv.Atoi(q.Get("s"))
-	ayah, _ := strconv.Atoi(q.Get("a"))
-	wordNo, _ := strconv.Atoi(q.Get("w"))
-	if !loc.Valid(surah, ayah, wordNo) {
-		s.respondError(w, http.StatusBadRequest, "invalid s/a/w")
-		return
-	}
-	key := loc.Key(surah, ayah, wordNo)
-	segs := s.masaq.ByWord[key]
-	// Note: ~23 known positions diverge between MASAQ and the XML
-	// (MASAQ merges "waw + ma" into "wama" while the XML keeps them
-	// separate). For those, segs will be empty and the UI shows
-	// "no morphological data" — see docs/research/data-validation.md.
-
-	// Look up the word text from the Quran struct.
-	var wordText string
-	if surahPtr := s.quran.Surahs[surah]; surahPtr != nil {
-		if ay := surahPtr.Ayahs[ayah]; ay != nil {
-			idx := 0
-			for _, t := range ay.Tokens {
-				if t.Kind != "word" {
-					continue
-				}
-				idx++
-				if idx == wordNo {
-					wordText = t.Value
-					break
-				}
-			}
-		}
-	}
-
-	resp := apiWordResponse{
-		Surah:       surah,
-		Ayah:        ayah,
-		Word:        wordNo,
-		WordText:    wordText,
-		Lemma:       computeLemma(segs),
-		Gloss:       combineGlosses(segs),
-		Translation: combineTranslations(segs),
-		POS:         "",
-		Function:    grammaticalFunction(segs),
-		Segments:    segs,
-	}
-	if bw, ok := s.roots.ByLoc[key]; ok {
-		if e, ok := s.roots.ByRoot[bw]; ok {
-			resp.Root = &rootSummary{
-				Buckwalter: e.Buckwalter,
-				Arabic:     e.Arabic,
-				Letters:    e.Letters,
-				POS:        e.POS,
-				MeaningEN:  e.MeaningEN,
-				MeaningAR:  e.MeaningAR,
-				Link:       "/root/detailed/" + e.Buckwalter,
-			}
-			// Prefer the root's POS for the top-level field when
-			// available — it's more authoritative than the
-			// morphological tag of a single segment.
-			if e.POS != "" {
-				resp.POS = e.POS
-			}
-		}
-	}
-	// Fallback: derive POS from segments if no root was found.
-	if resp.POS == "" {
-		for _, s := range segs {
-			switch s.MorphTag {
-			case "VERB", "IV", "IV1P", "IV1S", "IV2MP", "IV3FS", "IV3MP", "IV3MS", "IV_PASS", "PV", "CV":
-				resp.POS = "V"
-			case "NOUN", "NOUN_ABSTRACT", "NOUN_CONCRETE", "NOUN_PROP",
-				"NOUN_ACTIVE_PART", "NOUN_PASSIVE_PART", "NOUN_DIMINUTIVE",
-				"NOUN_FIVE", "NOUN_INSTRUMENT", "NOUN_NUM", "NOUN_TIME_PLACE",
-				"NOUN_VERB_LIKE", "NOUN_RELATIVE", "ADJ_QUALIT", "ADJ_COMP",
-				"ADJ_INTENS":
-				resp.POS = "N"
-			case "PREP", "CONJ", "NEG_PART", "INTERROG", "INTERROG_PART",
-				"REL_PRON", "DEM_PRON", "DEM_PRON_F", "DEM_PRON_FS",
-				"DEM_PRON_MP", "DEM_PRON_MS", "CERT_PART", "CONDITION_PART",
-				"FUTURE_PART", "JUSSIVE_PART", "EMPHATIC_NUN", "ANNUL_PART",
-				"EXCEPT_PART", "PRON", "PART", "DET", "POSS_PRON", "OBJ_PRON":
-				resp.POS = "P"
-			}
-			if resp.POS != "" {
-				break
-			}
-		}
-	}
-	s.respondJSON(w, http.StatusOK, resp)
-}
-
-// computeLemma returns the dictionary-form lemma for a word given
-// its MASAQ segments. Strategy:
-//
-//  1. If any segment is tagged as a proper noun (NOUN_PROP), use
-//     the Stem segment's WithoutDiacritics — proper nouns like
-//     "ٱللَّهِ" decompose into DET (ال) + NOUN_PROP (له) in MASAQ
-//     but the lemma should be "الله" not "له" or "ل".
-//  2. Else if the stem is a VERB, concatenate prefix + stem —
-//     verbal prefixes (أَنذِر → "أَنذِر", يَفْعَلُ → "يَفْعَل") carry
-//     semantic content and are part of the lemma. We exclude
-//     prefixes tagged as DET (definite article) which are NOT
-//     part of the lemma (e.g., ٱلْكِتَاب → "كتاب", not "الكتاب").
-//     We also exclude the article's bare lām prefix that MASAQ
-//     emits after a vowel-ending preposition — it has the same
-//     morph_tag (DET) so the DET filter handles it.
-//  3. Else (noun or particle), return just the stem. The lemma
-//     is the bare stem, never including DET or PREP prefixes.
-//  4. Fallback: first segment's WithoutDiacritics.
-func computeLemma(segs []types.MasaqSegment) string {
-	// Step 1: proper noun → use the Stem segment's without-diacritics
-	// form. If the stem doesn't start with "ال", the surface form
-	// elided the article's alif (this happens after a vowel-ending
-	// preposition like لِ or بِ, e.g., لِلَّهِ → "الله" not "له"). In
-	// that case we restore the elided alif so the lemma is the
-	// dictionary form of the proper noun.
-	for _, s := range segs {
-		if s.MorphTag == "NOUN_PROP" {
-			for _, ss := range segs {
-				if ss.MorphType == "Stem" {
-					lemma := ss.WithoutDiacritics
-					if !strings.HasPrefix(lemma, "ال") {
-						lemma = "ال" + lemma
-					}
-					return lemma
-				}
-			}
-			if len(segs) > 0 {
-				return segs[0].WithoutDiacritics
-			}
-			return ""
-		}
-	}
-
-	// Step 2: locate the stem.
-	var stem string
-	for _, s := range segs {
-		if s.MorphType == "Stem" && s.SegmentedWord != "" {
-			stem = s.SegmentedWord
-			break
-		}
-	}
-
-	// Step 3: gather verbal prefixes (those whose morph_tag is NOT
-	// DET — DET is the definite article, which is not part of the
-	// lemma). For verbs we walk the segments in order so the
-	// concatenated lemma matches the written form (e.g., أَنذِر =
-	// أَ + نذِر).
-	if isVerbLemma(segs) && stem != "" {
-		var b strings.Builder
-		for _, s := range segs {
-			if s.MorphType != "Prefix" {
-				continue
-			}
-			if s.MorphTag == "DET" {
-				// Definite article — never part of the lemma.
-				continue
-			}
-			if s.SegmentedWord != "" {
-				b.WriteString(s.SegmentedWord)
-			}
-		}
-		b.WriteString(stem)
-		return b.String()
-	}
-
-	// Step 4: noun / particle — return just the stem.
-	if stem != "" {
-		return stem
-	}
-
-	// Fallback: first segment's WithoutDiacritics, or empty.
-	if len(segs) > 0 {
-		return segs[0].WithoutDiacritics
-	}
-	return ""
-}
-
-// isVerbLemma reports whether the segments describe a verb (so the
-// lemma should include any non-article prefix). MASAQ tags the
-// verbal stems with morph_tag values starting with "V" (V, IV,
-// PV, CV) or containing "VERB" (VERB, VERB_IMPERFECT, etc.).
-func isVerbLemma(segs []types.MasaqSegment) bool {
-	for _, s := range segs {
-		if s.MorphType != "Stem" {
-			continue
-		}
-		t := s.MorphTag
-		if t == "V" || t == "IV" || t == "PV" || t == "CV" || t == "VERB" {
-			return true
-		}
-		if strings.HasPrefix(t, "V_") || strings.HasSuffix(t, "_VERB") {
-			return true
-		}
-	}
-	return false
-}
-
-// combineTranslations returns the word-level English translation.
-// All segments of a word share the same translation; we return the
-// first non-empty value.
-func combineTranslations(segs []types.MasaqSegment) string {
-	for _, s := range segs {
-		t := strings.TrimSpace(s.Translation)
-		if t != "" {
-			return t
-		}
-	}
-	return ""
-}
-
-// combineGlosses returns the canonical English gloss for a word.
-// MASAQ gives every segment of a word the same gloss (so a DET +
-// NOUN_PROP pair both read "(of)-allah"); we collapse those to the
-// stem segment's gloss, which is the most informative single string.
-func combineGlosses(segs []types.MasaqSegment) string {
-	for _, s := range segs {
-		if s.MorphType == "Stem" {
-			g := strings.TrimSpace(s.Gloss)
-			if g != "" {
-				return g
-			}
-		}
-	}
-	for _, s := range segs {
-		g := strings.TrimSpace(s.Gloss)
-		if g != "" {
-			return g
-		}
-	}
-	return ""
-}
-
-// grammaticalFunction inspects the stem segment's SyntacticRole and
-// CaseMood and produces a short English phrase like
-// "Genitive construct" or "Subject". Falls back to other segment
-// roles if the stem is empty.
-func grammaticalFunction(segs []types.MasaqSegment) string {
-	role, mood := pickSyntacticRole(segs)
-	if friendly := friendlyRole(role, mood); friendly != "" {
-		return friendly
-	}
-	// Fall back to a friendly description of the stem's MorphTag
-	// when the SyntacticRole didn't yield anything (common for
-	// verbs whose only tag is the verbal form like CV/IV/PV).
-	for _, s := range segs {
-		if s.MorphType == "Stem" {
-			if m := friendlyMorphTag(s.MorphTag, s.MorphType); m != "" {
-				return m
-			}
-		}
-	}
-	for _, s := range segs {
-		if m := friendlyMorphTag(s.MorphTag, s.MorphType); m != "" {
-			return m
-		}
-	}
-	return ""
-}
-
-func pickSyntacticRole(segs []types.MasaqSegment) (string, string) {
-	// Prefer the Stem segment.
-	for _, s := range segs {
-		if s.MorphType == "Stem" && s.SyntacticRole != "" {
-			return s.SyntacticRole, s.CaseMood
-		}
-	}
-	// Otherwise the last non-empty segment (typically the suffix or
-	// the only segment).
-	for i := len(segs) - 1; i >= 0; i-- {
-		if segs[i].SyntacticRole != "" {
-			return segs[i].SyntacticRole, segs[i].CaseMood
-		}
-	}
-	// Or the first segment's POS as a fallback.
-	if len(segs) > 0 {
-		return segs[0].SyntacticRole, segs[0].CaseMood
-	}
-	return "", ""
-}
-
-// friendlyMorphTag produces a friendly description for verbs whose
-// MASAQ tag is the verbal form rather than a syntactic role.
-// Examples: CV → "Imperfect verb", IV → "Perfect verb",
-// PV → "Verbal noun (masdar)".
-func friendlyMorphTag(tag, morphType string) string {
-	if morphType != "Stem" && morphType != "Prefix" && morphType != "Suffix" {
-		return ""
-	}
-	switch tag {
-	case "CV":
-		return "Imperfect verb"
-	case "IV":
-		return "Perfect verb"
-	case "PV":
-		return "Verbal noun"
-	case "CV_PREF":
-		return "Imperfect verb prefix"
-	case "IV_PREF":
-		return "Perfect verb prefix"
-	case "IVSUFF_SUBJ:MP_MOOD:I":
-		return "Imperfect verb subjunctive"
-	case "IVSUFF_SUBJ:MP_MOOD:SJ":
-		return "Imperfect verb jussive"
-	case "IVSUFF_DO:3MS":
-		return "Imperfect verb (do: him)"
-	}
-	return ""
-}
-
-func friendlyRole(role, mood string) string {
-	roleMap := map[string]string{
-		"PREP":           "Preposition",
-		"PREP_OBJ":       "Object of preposition",
-		"GEN_CONS":       "Genitive construct",
-		"NOUN_CONS":      "Construct noun",
-		"ADJ":            "Adjective",
-		"SUBJ":           "Subject",
-		"OBJ":            "Object",
-		"PRED":           "Predicate",
-		"VERB":           "Verb",
-		"ACC_SPECIF":     "Accusative specifier",
-		"CIRCUM":         "Circumstantial",
-		"ADV_TIME":       "Adverb of time",
-		"ADV_PLCE":       "Adverb of place",
-		"COMIT":          "Comitative",
-		"ANNUL_PART":     "Annulation particle",
-		"CERT_PART":      "Certainty particle",
-		"CONDITION_PART": "Conditional particle",
-		"EXCEPT_NOUN":    "Excepted noun",
-		"FUTURE_PART":    "Future particle",
-		"JUSSIVE_PART":   "Jussive particle",
-		"NEG":            "Negation",
-		"NEG_CAT":        "Categorical negation",
-		"NEG_MAA":        "Exceptive negation",
-		"NEG_PROH":       "Prohibitive negation",
-		"PART_COP_PRED":  "Predicate of copula",
-		"PART_COP_V":     "Copula verb",
-		"PART_CONDITION": "Conditional particle",
-		"PART_EXCEPT":    "Exceptive particle",
-		"PART_INHIB":     "Inhibitor particle",
-		"PART_INTERROG":  "Interrogative particle",
-		"PART_JUSSIVE":   "Jussive particle",
-		"PART_PREV":      "Preventive particle",
-		"PASS_SUBJ":      "Passive subject",
-		"PURP":           "Purpose clause",
-		"SUBJ_COP_PART":  "Subject of copular sentence",
-		"SUBJ_COP_V":     "Copular verb subject",
-		"SUBJ_DELA":      "Delayed subject",
-		"SUBJ_NEG_CAT":   "Subject of categorical negation",
-		"SUBJUNC_PART":   "Subjunctive particle",
-		"SUBOR_ANN_CONJ": "Annulling subordinating conjunction",
-		"SUBS_COG_ACC":   "Cognate accusative",
-		"V_COP_PRED":     "Copular predicate",
-		"VOC":            "Vocative",
-		"VOC_PART":       "Vocative particle",
-		"INTENCIF":       "Intentifier",
-		"INTERJ_CV":      "Interjection (imperfect)",
-		"INTERJ_IV":      "Interjection (perfect)",
-		"INTERJ_PV":      "Interjection (verbal)",
-		"NON_INFLECT":    "Non-inflecting",
-		"ACRON":          "Acronym",
-		"APPOS":          "Apposition",
-		"AGNT":           "Agent",
-		"COGN":           "Cognate",
-		"COMPL":          "Complement",
-		"CONJ":           "Conjunction",
-		"CONJ_N":         "Conjunction (negative)",
-		"CV":             "Imperfect verb",
-		"CV_COP":         "Copula (imperfect)",
-		"EXCP":           "Exception",
-		"EXPLET":         "Expletive",
-		"IV":             "Perfect verb",
-		"IV_COP":         "Copula (perfect)",
-		"IV_PASS":        "Passive verb",
-		"NUM_COMP":       "Compound number",
-		"PV":             "Verbal noun (masdar)",
-		"SUBOR_CONJ":     "Subordinating conjunction",
-	}
-	if r, ok := roleMap[role]; ok {
-		// Append case mood if present and meaningful.
-		if mood != "" && mood != "INVARIABLE" {
-			return r + " (" + friendlyMood(mood) + ")"
-		}
-		return r
-	}
-	if role != "" {
-		return role
-	}
-	return ""
-}
-
-func friendlyMood(m string) string {
-	moodMap := map[string]string{
-		"NOMINATIVE":       "nominative",
-		"ACCUSATIVE":       "accusative",
-		"GENITIVE":         "genitive",
-		"INVARIABLE":       "indeclinable",
-		"INVARIABLE_KASRA": "indeclinable (kasra)",
-	}
-	if r, ok := moodMap[m]; ok {
-		return r
-	}
-	return strings.ToLower(strings.ReplaceAll(m, "_", " "))
-}
-
-func (s *Server) handleAPISearch(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	typ := r.URL.Query().Get("type")
-	if q == "" {
-		s.respondJSON(w, http.StatusOK, map[string]any{"query": "", "type": typ, "results": []any{}})
-		return
-	}
-	var results []search.SearchResult
-	switch typ {
-	case "root":
-		results = search.Root(q, s.roots, s.quran, 100)
-	case "arabic":
-		results = search.Arabic(q, s.masaq, s.quran, 5000, 0)
-	case "translation":
-		results = search.Translation(q, s.masaq, s.quran, 5000, 0)
-	default:
-		typ = "english"
-		results = search.English(q, s.masaq, s.quran, 5000, 0)
-	}
-	s.respondJSON(w, http.StatusOK, map[string]any{
-		"query":   q,
-		"type":    typ,
-		"results": results,
-	})
-}
-
 func (s *Server) handleAPIRoots(w http.ResponseWriter, r *http.Request) {
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
@@ -1412,12 +858,12 @@ func (s *Server) handleAPIRootOccurrences(w http.ResponseWriter, r *http.Request
 	root := r.PathValue("root")
 	entry, ok := s.roots.ByRoot[root]
 	if !ok {
-		s.respondError(w, http.StatusNotFound, "root not found")
+		s.respondError(w, r, http.StatusNotFound, "root not found")
 		return
 	}
 	filterSurah, _ := strconv.Atoi(r.URL.Query().Get("surah"))
 	asc := r.URL.Query().Get("sort") == "asc"
-	occ := search.OccurrencesForRoot(root, s.roots, s.quran, filterSurah, asc)
+	occ := search.OccurrencesForRoot(root, s.roots, s.quran, s.masaq, filterSurah, asc)
 	s.respondJSON(w, http.StatusOK, map[string]any{
 		"root":        root,
 		"arabic":      entry.Arabic,
@@ -1436,7 +882,7 @@ func (s *Server) handleAPIRootSummary(w http.ResponseWriter, r *http.Request) {
 	root := r.PathValue("root")
 	entry, ok := s.roots.ByRoot[root]
 	if !ok {
-		s.respondError(w, http.StatusNotFound, "root not found")
+		s.respondError(w, r, http.StatusNotFound, "root not found")
 		return
 	}
 
@@ -1503,22 +949,26 @@ func (s *Server) render(w http.ResponseWriter, name string, data any) {
 	var buf bytes.Buffer
 	if err := t.ExecuteTemplate(&buf, name, data); err != nil {
 		s.log.Error("template execute", "name", name, "err", err)
-		// Reset the response writer — we can't un-write partial
-		// bytes, but we can replace them with a clean error page
-		// by hijacking the underlying writer. As a fallback, send
-		// the error as text since the original headers are gone.
-		// Use respondError which writes a fresh 500 + error page.
+		// Template errors are always 500 with a plain-text fallback
+		// (the HTML error page is itself a template, so recursive
+		// failures are possible). We skip the respondError path
+		// because render() has no access to the incoming *Request.
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusInternalServerError)
-		// Best-effort: render the error template to the buffer and
-		// append the raw error text below it so developers can see
-		// the failure mode without checking the server logs.
-		fmt.Fprintf(w, "<!-- template %q failed: %s -->\n", name, err.Error())
+		fmt.Fprintf(w, "template %q failed: %s", name, err.Error())
 		return
 	}
 	w.Write(buf.Bytes())
 }
 
-func (s *Server) respondError(w http.ResponseWriter, status int, msg string) {
+func (s *Server) respondError(w http.ResponseWriter, r *http.Request, status int, msg string) {
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.respondJSON(w, status, map[string]any{
+			"error": msg,
+			"path":  r.URL.Path,
+		})
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	data := struct {
@@ -1544,7 +994,3 @@ func (s *Server) respondJSON(w http.ResponseWriter, status int, v any) {
 		s.log.Error("json encode", "err", err)
 	}
 }
-
-// silence unused warnings if data.LoadAll isn't called from here.
-var _ = data.LoadAll
-var _ = path.Clean

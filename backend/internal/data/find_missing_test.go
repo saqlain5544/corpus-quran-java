@@ -47,7 +47,7 @@ func TestFindMissingMorphology(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	quran, masaq, _, _, err := LoadAll(dbPath)
+	quran, masaq, _, _, _, err := LoadAll(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}

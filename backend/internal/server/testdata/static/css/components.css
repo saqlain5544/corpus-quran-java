@@ -7,7 +7,15 @@
 /* The header element itself fills the viewport; its inner content
  * (brand + search + nav) is centered and capped at the page max-width
  * for visual rhythm. The background spans the full width so the
- * sticky surface looks uninterrupted. */
+ * sticky surface looks uninterrupted.
+ *
+ * Layout strategy across viewports (implemented in @media below):
+ *   ≥900px:  |hamburger| brand | search | nav + actions |
+ *   640-900: |hamburger| brand | search | nav |
+ *   <640px:   |hamburger| brand | search (full width on row 2)
+ *
+ * On narrow viewports the full nav collapses behind a hamburger
+ * button + the slide-in .gh-nav-drawer. */
 .global-header {
   position: sticky;
   top: 0;
@@ -21,18 +29,50 @@
 }
 .gh-inner {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto;
+  grid-template-areas: "hamburger brand search nav actions";
   align-items: center;
-  gap: var(--sp-4);
+  column-gap: var(--sp-4);
+  row-gap: var(--sp-2);
   max-width: var(--grid-max);
   margin: 0 auto;
   padding: var(--sp-3) var(--sp-4);
 }
+.gh-hamburger { grid-area: hamburger; }
+.gh-brand     { grid-area: brand; }
+.gh-search-wrap { grid-area: search; min-width: 0; }
+.gh-nav       { grid-area: nav; }
+/* Mobile-only actions: ★ + ◐ on narrow viewports. Hidden on
+ * desktop because the same icons live in .gh-nav above. */
+.gh-actions-mobile { grid-area: actions; display: none; }
+
+/* Hamburger button — hidden on desktop, visible on narrow viewports
+ * via @media. 44x44 touch target. */
+.gh-hamburger {
+  display: none;
+  background: none;
+  border: 0;
+  padding: var(--sp-2);
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  line-height: 0; /* keeps icon tightly bound to button edge */
+}
+.gh-hamburger:hover { background: var(--bg-sunken); }
+.gh-hamburger svg { display: block; }
+
+/* "Open" state — flips the bars into an X when expanded. */
+.gh-hamburger[aria-expanded="true"] svg path {
+  d: path("M6 6l12 12M18 6l-12 12");
+}
+
 .gh-brand {
   font: 600 var(--fs-lg)/1 var(--font-latin);
   letter-spacing: -0.01em;
   color: var(--ink);
   text-decoration: none;
+  white-space: nowrap;
 }
 .gh-search { display: flex; gap: var(--sp-2); min-width: 0; }
 .gh-search input,
@@ -148,6 +188,40 @@
               background var(--dur-fast) var(--ease-out);
 }
 .gh-nav a:hover { color: var(--accent); }
+
+/* Mobile nav drawer — slides down from the header when the
+ * hamburger is tapped. Hidden by default; the JS toggles [hidden].
+ * Slim vertical list of full-width tappable links. */
+.gh-nav-drawer {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border-top: var(--border-w) solid var(--rule);
+  max-height: 12rem; /* large enough for the three nav links */
+  overflow: hidden;
+  transition: max-height var(--dur-base) var(--ease-out);
+}
+.gh-nav-drawer[hidden] {
+  max-height: 0;
+}
+/* Width + horizontal centering — the drawer spans the full viewport
+ * while the header sits inside the page's max-width container. */
+.gh-nav-drawer {
+  width: 100vw;
+}
+.gh-nav-drawer a {
+  padding: var(--sp-3) var(--sp-6);
+  color: var(--ink);
+  text-decoration: none;
+  font: 600 var(--fs-md)/1.4 var(--font-latin);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-nav-drawer a:last-child { border-bottom: 0; }
+.gh-nav-drawer a:hover,
+.gh-nav-drawer a:focus-visible {
+  background: var(--bg-sunken);
+  color: var(--accent);
+}
 /* Active nav state — set body[data-page] in layout.tmpl. The
    gold underline + accent color matches the bookmarks button's
    "pressed" state for visual consistency. */
@@ -206,6 +280,20 @@ body[data-page="About"] .gh-nav a[href="/about"] {
   letter-spacing: 0.06em;
   color: var(--accent);
 }
+.gh-bookmarks-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.gh-bookmarks-count {
+  font: 600 var(--fs-xs)/1 var(--font-mono);
+  letter-spacing: 0;
+  color: var(--ink-muted);
+  background: var(--bg-sunken);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  text-transform: none;
+}
 .gh-bookmarks-head button {
   font: var(--fs-xs)/1 var(--font-latin);
   text-transform: none;
@@ -261,11 +349,43 @@ body[data-page="About"] .gh-nav a[href="/about"] {
   text-align: center;
 }
 
+/* ── Global header responsive ────────────────────────────────── */
+/* Three breakpoints, each progressively more compact:
+ *   900px: hide the desktop nav (Roots/Concordance/About links
+ *          move to the slide-in drawer) — hamburger appears
+ *   720px: keep the drawer but compress padding
+ *   480px: tighter still — search input drops its placeholder hint
+ *
+ * The hamburger stays for the duration of all three. */
+@media (max-width: 900px) {
+  .gh-inner {
+    /* 5-col grid → 4-col grid: brand | search | actions */
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "hamburger brand search actions";
+    column-gap: var(--sp-2);
+  }
+  .gh-hamburger { display: inline-flex; }
+  .gh-nav { display: none; }
+  /* Reveal mobile-only actions on narrow viewports (their counterparts
+   * in .gh-nav are hidden via the rule above). */
+  .gh-actions-mobile { display: flex; gap: var(--sp-1); }
+}
+
 @media (max-width: 720px) {
-  .gh-inner { grid-template-columns: 1fr auto; gap: var(--sp-2); }
-  .gh-brand { grid-column: 1; }
-  .gh-search { grid-column: 1 / -1; }
-  .gh-nav { grid-column: 2; grid-row: 1; }
+  .gh-inner {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .gh-hamburger { padding: var(--sp-1); }
+  /* The search form's type-select may crowd the input. Hide it on
+   * phones — the search type is still settable from the search
+   * results page via the inline filter. */
+  .gh-search select { display: none; }
+}
+
+@media (max-width: 480px) {
+  .gh-inner { padding: var(--sp-2) var(--sp-2); }
+  .gh-search input { min-width: 4rem; font-size: var(--fs-sm); }
+  .gh-actions-mobile { gap: 0; }
 }
 
 /* ── Surah header ──────────────────────────────────────────── */
@@ -594,125 +714,26 @@ body[data-page="About"] .gh-nav a[href="/about"] {
   margin: var(--sp-2) 0;
 }
 
-/* ── Modal ─────────────────────────────────────────────────── */
-.word-modal {
-  border: 0;
-  padding: 0;
+/* Filter form apply button — used by /roots and /root/detailed.
+ * Visual weight is intentionally low so the auto-submit-on-change
+ * behavior is the primary interaction; the button is the keyboard /
+ * a11y fallback for users who don't trigger change events. */
+.filter-apply {
+  font: 500 var(--fs-sm)/1 var(--font-latin);
   background: transparent;
-  max-width: var(--measure-base);
-  width: 92vw;
-  color: inherit;
-}
-.word-modal::backdrop {
-  background: var(--modal-backdrop);
-  z-index: var(--z-modal);
-}
-.modal-shell {
-  background: var(--bg-elev);
-  color: var(--ink);
-  border-radius: var(--radius-lg);
-  padding: var(--sp-6);
-  box-shadow: 0 24px 64px rgba(0,0,0,0.25);
-  display: grid;
-  gap: var(--sp-4);
-  max-height: 85vh;
-  overflow: auto;
-}
-.modal-header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-4); }
-.modal-title { margin: 0; font: 600 var(--fs-lg)/1.2 var(--font-latin); }
-.modal-close {
-  background: none;
-  border: 0;
+  color: var(--ink-muted);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
   cursor: pointer;
-  color: var(--ink-muted);
-  font-size: var(--fs-2xl);
-  line-height: 1;
-  padding: 0 var(--sp-2);
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
 }
-.modal-close:hover { color: var(--ink); }
-.modal-loading { color: var(--ink-muted); font-style: italic; }
-
-.modal-word-text {
-  font: 700 var(--fs-2xl)/1.4 var(--font-arabic);
-  text-align: center;
-  margin: 0 0 var(--sp-3);
-  padding: 0 0 var(--sp-3);
-  border-bottom: var(--border-w) solid var(--rule);
-  color: var(--ink);
-  direction: rtl;
-}
-
-/* Root / Lemma / Gloss — label : value list */
-.modal-shell .m-fields {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  column-gap: var(--sp-3);
-  row-gap: var(--sp-1);
-  margin: 0 0 var(--sp-3);
-}
-.modal-shell .m-fields dt {
-  color: var(--ink-muted);
-  font-weight: 500;
-  font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  align-self: baseline;
-}
-.modal-shell .m-fields dd { margin: 0; }
-.modal-shell .m-root {
-  font: 600 var(--fs-md)/1 var(--font-arabic);
-  color: var(--accent);
-  word-spacing: 0.5em;
-  letter-spacing: 0.05em;
-}
-.modal-shell .m-lemma {
-  font: 600 var(--fs-md)/1 var(--font-arabic);
-  color: var(--ink);
-}
-.modal-shell .m-gloss { color: var(--ink); }
-
-/* POS · Function — small caps, bottom */
-.modal-shell .m-meta {
-  display: flex;
-  gap: var(--sp-2);
-  align-items: baseline;
-  flex-wrap: wrap;
-  padding-top: var(--sp-2);
-  margin-bottom: var(--sp-3);
-  border-top: var(--border-w) solid var(--rule);
-  font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-.modal-shell .m-pos { font-weight: 700; color: var(--accent); }
-.modal-shell .m-fn { color: var(--ink-muted); }
-.modal-shell .m-sep { color: var(--ink-soft); }
-
-.modal-root {
-  padding: var(--sp-3);
+.filter-apply:hover {
   background: var(--bg-sunken);
-  border-radius: var(--radius-md);
+  color: var(--ink);
 }
-.modal-root .m-root-line {
-  display: flex;
-  gap: var(--sp-3);
-  align-items: baseline;
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-2);
-}
-.modal-root .mr-arabic { font: 700 var(--fs-lg)/1 var(--font-arabic); direction: rtl; }
-.modal-root .mr-buckwalter { font-family: var(--font-mono); color: var(--ink-muted); }
-.modal-root .mr-pos {
-  font-size: var(--fs-xs);
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--accent);
-  font-weight: 700;
-}
-.modal-root .mr-meaning { margin: var(--sp-2) 0; color: var(--ink); }
-.modal-root .mr-link { color: var(--accent); }
-.modal-no-root, .modal-no-data {
-  color: var(--ink-soft);
-  font-style: italic;
-  margin: 0;
+.filter-apply:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }

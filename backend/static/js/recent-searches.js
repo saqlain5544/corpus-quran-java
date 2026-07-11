@@ -18,24 +18,11 @@
   if (!input || !form || !dropdown || !list) return;
 
   function load() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return [];
-      var parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      return [];
-    }
+    return QR.storage.getJSON(STORAGE_KEY);
   }
 
   function save(items) {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
-    } catch (e) {
-      // localStorage may be disabled (e.g., file://, private mode).
-      // Silently skip — the dropdown just won't persist across
-      // sessions.
-    }
+    QR.storage.setJSON(STORAGE_KEY, items);
   }
 
   // Render the dropdown items.

@@ -42,8 +42,9 @@ func TestBookmarksUsesSet(t *testing.T) {
 }
 
 // TestSurahHeaderDebouncesLocalStorage verifies that the font-size
-// and line-height sliders now debounce their localStorage writes
-// instead of writing on every input event.
+// and line-height sliders debounce their localStorage writes through
+// the QR.dom.debounce / QR.storage abstractions (in static/js/dom.js
+// and static/js/storage.js) instead of writing on every input event.
 func TestSurahHeaderDebouncesLocalStorage(t *testing.T) {
 	jsPath := filepath.Join("..", "..", "static", "js", "surah-header.js")
 	b, err := os.ReadFile(jsPath)
@@ -51,21 +52,15 @@ func TestSurahHeaderDebouncesLocalStorage(t *testing.T) {
 		t.Fatalf("read %s: %v", jsPath, err)
 	}
 	src := string(b)
-	// Look for the debounce pattern: setTimeout wrapping the
-	// localStorage.setItem call.
-	if !strings.Contains(src, "setTimeout") {
-		t.Errorf("surah-header.js has no setTimeout — slider persistence is not debounced")
+	// The slider persistence must go through the shared debounce
+	// helper — it lives in dom.js and wraps setTimeout.
+	if !strings.Contains(src, "QR.dom.debounce") {
+		t.Errorf("surah-header.js does not use QR.dom.debounce for slider persistence")
 	}
-	// The debounce state must be tracked somewhere. Either
-	// `saveTimer` (single slider) or `sliderSaveTimers` (keyed map
-	// for multiple sliders) — we accept either.
-	if !strings.Contains(src, "saveTimer") && !strings.Contains(src, "sliderSaveTimers") {
-		t.Errorf("surah-header.js has no debounce state — slider persistence is not debounced")
-	}
-	// And it must wrap a localStorage.setItem call (otherwise the
-	// timer doesn't actually do anything useful).
-	if !strings.Contains(src, "localStorage.setItem") {
-		t.Errorf("surah-header.js has no localStorage.setItem call at all")
+	// And the inner call must go through QR.storage.set so private-
+	// mode / file:// environments don't throw.
+	if !strings.Contains(src, "QR.storage.set") {
+		t.Errorf("surah-header.js does not use QR.storage.set — localStorage is raw")
 	}
 }
 

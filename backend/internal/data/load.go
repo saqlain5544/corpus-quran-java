@@ -2,6 +2,7 @@ package data
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -10,9 +11,10 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"quranreader/loc"
-	"quranreader/types"
 	"quranreader/backend/internal/search/bktree"
+	"quranreader/loc"
+	"quranreader/token"
+	"quranreader/types"
 )
 
 // enTokenRe mirrors search.EnTokenize's regex — matches runs of
@@ -46,11 +48,11 @@ type arabicPairLocal struct {
 // connection from the pool, which is safe (SQLite is read-only here
 // and the connections don't share state). On a modern SSD this drops
 // total load time by ~40% versus sequential reads.
-func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex, *types.Meta, error) {
-	// One shared *sql.DB so the three loaders share a connection pool.
+func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex, *types.Meta, *Concordance, error) {
+	// One shared *sql.DB so the loaders share a connection pool.
 	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("open db: %w", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("open db: %w", err)
 	}
 	defer db.Close()
 
@@ -66,6 +68,10 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 		r   *types.RootsIndex
 		err error
 	}
+	type cResult struct {
+		c   *Concordance
+		err error
+	}
 
 	// Use Go 1.25's WaitGroup.Go() — cleaner than the manual
 	// Add(1) / defer Done() dance. The buffers of size 1 ensure
@@ -74,40 +80,65 @@ func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex,
 	qCh := make(chan qResult, 1)
 	mCh := make(chan mResult, 1)
 	rCh := make(chan rResult, 1)
+	cCh := make(chan cResult, 1)
 
 	var wg sync.WaitGroup
-	wg.Go(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		q, e := loadQuranFromDB(db)
 		qCh <- qResult{q, e}
-	})
-	wg.Go(func() {
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		m, e := loadMasaqFromDB(db)
 		mCh <- mResult{m, e}
-	})
-	wg.Go(func() {
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 		r, e := loadRootsFromDB(db)
 		rCh <- rResult{r, e}
-	})
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c, e := LoadConcordanceFromDB(db)
+		cCh <- cResult{c, e}
+	}()
 	wg.Wait()
 	close(qCh)
 	close(mCh)
 	close(rCh)
+	close(cCh)
 
 	qr := <-qCh
 	if qr.err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("quran: %w", qr.err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("quran: %w", qr.err)
 	}
 	mr := <-mCh
 	if mr.err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("masaq: %w", mr.err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("masaq: %w", mr.err)
 	}
 	rr := <-rCh
 	if rr.err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("roots: %w", rr.err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("roots: %w", rr.err)
+	}
+	cr := <-cCh
+	if cr.err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("concordance: %w", cr.err)
 	}
 
+	// Reconcile word-boundary disagreements between the Quran XML
+	// tokenizer and MASAQ's morphological segmentation.  ~23 words
+	// (0.03%) are split in the XML but merged into a single MASAQ
+	// position; we copy the merged word's segments to the missing
+	// position so tooltip/API lookups succeed 100% of the time.
+	reconcileMasaqBoundaries(mr.m, qr.q)
+
 	meta := qr.q.Meta
-	return qr.q, mr.m, rr.r, &meta, nil
+	return qr.q, mr.m, rr.r, &meta, cr.c, nil
 }
 
 // loadQuranFromDB reads surahs and verses, tokenizes each verse,
@@ -139,9 +170,9 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 		// are nullable in the DB schema (some rows may be empty).
 		// Use sql.NullString to scan them safely.
 		var (
-			nl   sql.NullString
-			etr  sql.NullString
-			rt   sql.NullString
+			nl  sql.NullString
+			etr sql.NullString
+			rt  sql.NullString
 		)
 		if err := rows.Scan(&id, &name, &nl, &etr, &rt); err != nil {
 			return nil, err
@@ -192,7 +223,14 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 		// SearchText: pre-normalized (lowercased, whitespace collapsed)
 		// visible text. Used as the local-search cache on the surah
 		// page (surah-header.js reads .dataset.searchText instead of
-		// .textContent on every submit).
+		// textContent on every submit).
+		//
+		// NOTE: U+06E3 (Arabic Small Low Seen — quranic orthographic
+		// mark for the ص→س pronunciation shift in مُصَيْطِرُ) is kept
+		// as-is in the source data. hafs.woff2 maps U+06E3 → glyph
+		// 105 with valid outline, so the data is correct. Any render
+		// issue at this character is a browser/shaper/font-fallback
+		// concern, not a data one.
 		searchText := strings.ToLower(strings.Join(strings.Fields(text), " "))
 		s.Ayahs[vn] = &types.Ayah{Number: vn, Text: text, SearchText: searchText}
 	}
@@ -217,7 +255,7 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 				continue
 			}
 			if s := q.Surahs[n]; s != nil {
-				s.Bismillah = BISMILLAH_TEXT
+				s.Bismillah = token.BISMILLAH_TEXT
 			}
 		}
 	}
@@ -231,7 +269,7 @@ func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
 		q.Meta.AyahCounts[n-1] = len(s.Ayahs)
 		q.Meta.AyahCount += len(s.Ayahs)
 		for _, ay := range s.Ayahs {
-			ay.Tokens = tokenize(ay.Text)
+			ay.Tokens = token.Tokenize(ay.Text)
 			for _, t := range ay.Tokens {
 				if t.Kind == "word" {
 					q.Meta.WordCount++
@@ -260,7 +298,7 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 	// prefixed words (e.g., لِلَّهِ = لِ + لَّهِ → word-level = "لله"
 	// but each segment has its own without-diacritics form: "ل" and "له").
 	rows, err := db.Query(`
-		SELECT w.surah_id, v.verse_number, w.word_number,
+		SELECT v.surah_id, v.verse_number, w.word_number,
 		       w.token_imla_i, w.translation,
 		       s.segment_number, s.text, s.without_diacritics,
 		       s.morph_tag, s.morph_type,
@@ -271,7 +309,7 @@ func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
 		FROM words w
 		JOIN verses v ON w.verse_id = v.id
 		JOIN segments s ON s.word_id = w.id
-		ORDER BY w.surah_id, v.verse_number, w.word_number, s.segment_number
+		ORDER BY v.surah_id, v.verse_number, w.word_number, s.segment_number
 	`)
 	if err != nil {
 		return nil, err
@@ -506,7 +544,11 @@ func normalizeArabicLocal(s string) string {
 	for _, r := range s {
 		switch {
 		case r >= 0x064B && r <= 0x065F: // tashkeel
-		case r == 0x0670, r == 0x0640: // alef khanjariya, tatweel
+		case r == 0x0670: // alef khanjariya → alif
+			b.WriteRune(0x0627)
+		case r == 0x0671: // alif wasla → alif (matches stripTashkeel)
+			b.WriteRune(0x0627)
+		case r == 0x0640: // tatweel — skip
 		case r == 'أ', r == 'إ', r == 'آ', r == 'ٱ':
 			b.WriteRune('ا')
 		case r == 'ى', r == 'ٰ':
@@ -584,10 +626,15 @@ func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
 		RootsBySurah: make(map[int]map[string]bool, 114),
 	}
 
-	// Roots table — basic fields from DB.
+	// Roots table — schema mirrors meanings-roots-ai.jsonl exactly.
+	// This is the single source of truth for root data.
 	rrows, err := db.Query(`
 		SELECT root_buckwalter, root_arabic, root_letters, pos,
-		       frequency, meaning_en, meaning_ar
+		       occurrences_quran, meaning_en, meaning_ar,
+		       COALESCE(meaning_ar_definition, ''),
+		       COALESCE(etymology, ''),
+		       COALESCE(hadith_evidence, ''),
+		       COALESCE(core_semantic, '')
 		FROM roots
 	`)
 	if err != nil {
@@ -596,13 +643,15 @@ func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
 	defer rrows.Close()
 
 	type dbRoot struct {
-		bw, arabic, letters, pos, men, mar string
-		freq                               int
+		bw, arabic, letters, pos, men, mar, coreSemantic string
+		arDef, etymologyJSON, hadithJSON                 string
+		freq                                             int
 	}
 	dbRoots := map[string]*dbRoot{}
 	for rrows.Next() {
 		var dr dbRoot
-		if err := rrows.Scan(&dr.bw, &dr.arabic, &dr.letters, &dr.pos, &dr.freq, &dr.men, &dr.mar); err != nil {
+		if err := rrows.Scan(&dr.bw, &dr.arabic, &dr.letters, &dr.pos, &dr.freq,
+			&dr.men, &dr.mar, &dr.arDef, &dr.etymologyJSON, &dr.hadithJSON, &dr.coreSemantic); err != nil {
 			return nil, err
 		}
 		drCopy := dr
@@ -612,34 +661,48 @@ func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
 		return nil, err
 	}
 
-	// Load richer AI-generated meanings from meanings-roots-ai.jsonl.
-	richRoots := loadRichMeanings()
-
+	// All root data comes from the DB — meanings-roots-ai.jsonl is the
+	// sole source; no runtime file loading needed.
 	for _, dr := range dbRoots {
 		entry := &types.RootEntry{
-			Buckwalter:  dr.bw,
-			Arabic:      dr.arabic,
-			Letters:     dr.letters,
-			POS:         dr.pos,
-			Occurrences: dr.freq,
-			MeaningEN:   dr.men,
-			MeaningAR:   dr.mar,
-			Locations:   nil, // populated below from words table
+			Buckwalter:   dr.bw,
+			Arabic:       dr.arabic,
+			Letters:      dr.letters,
+			POS:          dr.pos,
+			Occurrences:  dr.freq,
+			MeaningEN:    dr.men,
+			MeaningAR:    dr.mar,
+			CoreSemantic: dr.coreSemantic,
+			Locations:    nil, // populated below from words table
 		}
-		// Enrich from AI data if available.
-		if rm, ok := richRoots[dr.bw]; ok {
-			entry.CoreSemantic = rm.LexicalAnalysis.CoreSemanticField
-			entry.IbnFaris = rm.LexicalAnalysis.IbnFaris
-			entry.AlRaghib = rm.LexicalAnalysis.AlRaghib
-			for _, ex := range rm.QuranExamples {
-				entry.QuranExamples = append(entry.QuranExamples, types.QuranExample{
-					Ref: ex.Ref, Arabic: ex.Arabic, English: ex.English, Context: ex.Context,
-				})
+		// Fallback: use ar_definition when meaning_ar is empty.
+		if entry.MeaningAR == "" {
+			entry.MeaningAR = dr.arDef
+		}
+		// Deserialize etymology JSON for Ibn Faris / Al-Raghib.
+		if dr.etymologyJSON != "" {
+			var etym struct {
+				IbnFaris string `json:"ibn_faris"`
+				AlRaghib string `json:"al_raghib"`
 			}
-			for _, h := range rm.Hadith {
-				entry.HadithExamples = append(entry.HadithExamples, types.HadithExample{
-					Arabic: h.Arabic, English: h.English, Source: h.Source,
-				})
+			if err := json.Unmarshal([]byte(dr.etymologyJSON), &etym); err == nil {
+				entry.IbnFaris = etym.IbnFaris
+				entry.AlRaghib = etym.AlRaghib
+			}
+		}
+		// Deserialize hadith evidence.
+		if dr.hadithJSON != "" {
+			var hadithList []struct {
+				Arabic  string `json:"ar"`
+				English string `json:"en"`
+				Source  string `json:"source"`
+			}
+			if err := json.Unmarshal([]byte(dr.hadithJSON), &hadithList); err == nil {
+				for _, h := range hadithList {
+					entry.HadithExamples = append(entry.HadithExamples, types.HadithExample{
+						Arabic: h.Arabic, English: h.English, Source: h.Source,
+					})
+				}
 			}
 		}
 		idx.ByRoot[dr.bw] = entry
@@ -659,13 +722,13 @@ func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
 
 	// Word-root mappings (ByLoc) and location lists.
 	wrows, err := db.Query(`
-		SELECT w.surah_id, v.verse_number, w.word_number, w.root_buckwalter
+		SELECT v.surah_id, v.verse_number, w.word_number, w.root_buckwalter
 		FROM words w
 		JOIN verses v ON w.verse_id = v.id
 		WHERE w.root_buckwalter IS NOT NULL
 		  AND w.root_buckwalter != ''
 		  AND w.root_buckwalter != 'None'
-		ORDER BY w.surah_id, v.verse_number, w.word_number
+		ORDER BY v.surah_id, v.verse_number, w.word_number
 	`)
 	if err != nil {
 		return nil, err
@@ -698,30 +761,4 @@ func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
 	}
 
 	return idx, nil
-}
-
-// stripDiacritics removes tashkeel from an Arabic string so that
-// lookups by raw Arabic letters are robust.
-func stripDiacritics(s string) string {
-	var buf []rune
-	for _, r := range s {
-		if r >= 0x064B && r <= 0x065F {
-			continue
-		}
-		if r == 0x0670 {
-			continue
-		}
-		buf = append(buf, r)
-	}
-	return string(buf)
-}
-
-// firstErr returns the first non-nil error in the slice.
-func firstErr(errs []error) error {
-	for _, e := range errs {
-		if e != nil {
-			return e
-		}
-	}
-	return nil
 }

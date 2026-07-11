@@ -9,6 +9,8 @@
 // specific relevance. They are read-only over the loaded indexes.
 package search
 
+import "quranreader/types"
+
 // SearchResult is the union shape returned by all three search modes.
 // Fields used depend on the mode:
 //   - root mode: Root, Surah, Ayah, Word all set; Snippet is empty
@@ -25,4 +27,8 @@ type SearchResult struct {
 	Link      string `json:"link"`       // relative URL to follow
 	Score     int    `json:"score"`      // lower = better match; for sorting
 	Root      string `json:"root"`       // buckwalter, when present
+	// MorphSegments is populated by OccurrencesForRoot when a *MasaqIndex
+	// is passed. Each segment carries morph_tag, morph_type, syntactic_role,
+	// case_mood, gloss, and word-level translation from the DB.
+	MorphSegments []types.MasaqSegment `json:"morph_segments,omitempty"`
 }

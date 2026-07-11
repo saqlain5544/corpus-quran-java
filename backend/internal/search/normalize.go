@@ -212,8 +212,9 @@ func Levenshtein(a, b string) int {
 
 // HighlightSnippet wraps the first occurrence of `match` inside `text`
 // with `<mark>…</mark>`. Returns text unchanged if match is empty or
-// not found. The matching is case-sensitive for English and uses
-// NormalizeArabic for Arabic text.
+// not found. Both text and match are normalized (tashkeel stripped,
+// hamza/ya/ta-marbuta unified) before comparison so diacritical
+// differences do not prevent a match.
 //
 // The returned string is HTML-safe at the caller — server templates
 // render snippets via html/template which auto-escapes; the <mark>
@@ -223,11 +224,31 @@ func HighlightSnippet(text, match string) string {
 	if match == "" {
 		return text
 	}
-	i := strings.Index(text, match)
+	textNorm := NormalizeArabic(text)
+	matchNorm := NormalizeArabic(match)
+	i := strings.Index(textNorm, matchNorm)
 	if i < 0 {
 		return text
 	}
-	return text[:i] + "<mark>" + match + "</mark>" + text[i+len(match):]
+	// Map the normalized position back to the original text by counting
+	// visible (non-skipped) runes up to the match start.
+	pos := 0
+	for _, r := range text {
+		if pos == i {
+			break
+		}
+		if !isNormalizationSkipped(r) {
+			pos++
+		}
+	}
+	// end is relative to the original text (pos chars in, match chars long).
+	end := pos + len(match)
+	return text[:pos] + "<mark>" + match + "</mark>" + text[end:]
+}
+
+// isNormalizationSkipped reports whether r is stripped by NormalizeArabic.
+func isNormalizationSkipped(r rune) bool {
+	return (r >= 0x064B && r <= 0x065F) || r == 0x0670 || r == 0x0640
 }
 
 // ── English / Translation word-tokenization ──────────────────
@@ -240,9 +261,10 @@ func HighlightSnippet(text, match string) string {
 // hyphen-separated chunk as its own word.
 //
 // Examples:
-//   "heavy-rain"        → ["heavy", "rain"]         (2 words)
-//   "(rain-from)-sky"    → ["rain", "from", "sky"]   (3 words)
-//   "and-the-prayer;"    → ["and", "the", "prayer"]  (3 words)
+//
+//	"heavy-rain"        → ["heavy", "rain"]         (2 words)
+//	"(rain-from)-sky"    → ["rain", "from", "sky"]   (3 words)
+//	"and-the-prayer;"    → ["and", "the", "prayer"]  (3 words)
 //
 // This is the right granularity for word-boundary matching:
 // queries like "rain" should match "(rain-from)-sky" as exact-word
@@ -263,28 +285,28 @@ func EnTokenize(s string) []string {
 // MatchClass is a tiered classification of how a query matches a
 // candidate gloss. Lower numbers are better matches and sort first.
 //
-//   0 — exact full-text match (the whole gloss equals the query, or
-//        the query is a single token and the gloss is that single
-//        token)
-//   1 — exact word-boundary match (every query token is a full
-//        word in the gloss, after tokenization on hyphens)
-//   2 — prefix match (a gloss word starts with the query and the
-//        query is shorter than that word — e.g., "rain" → "raining")
-//   3 — substring inside a token (e.g., "rain" → "rainfall") — only
-//        when the substring is at the START of a token, never in
-//        the middle (so "rain" doesn't match "restrain").
-//   4 — fuzzy match (Levenshtein ≤ 2 on a single-word query vs a
-//        single gloss word)
-//   9 — no useful match
+//	0 — exact full-text match (the whole gloss equals the query, or
+//	     the query is a single token and the gloss is that single
+//	     token)
+//	1 — exact word-boundary match (every query token is a full
+//	     word in the gloss, after tokenization on hyphens)
+//	2 — prefix match (a gloss word starts with the query and the
+//	     query is shorter than that word — e.g., "rain" → "raining")
+//	3 — substring inside a token (e.g., "rain" → "rainfall") — only
+//	     when the substring is at the START of a token, never in
+//	     the middle (so "rain" doesn't match "restrain").
+//	4 — fuzzy match (Levenshtein ≤ 2 on a single-word query vs a
+//	     single gloss word)
+//	9 — no useful match
 type MatchClass int
 
 const (
-	MatchExact        MatchClass = 0
-	MatchExactWord    MatchClass = 1
-	MatchPrefix       MatchClass = 2
-	MatchSubstring    MatchClass = 3
-	MatchFuzzy        MatchClass = 4
-	MatchNone         MatchClass = 9
+	MatchExact     MatchClass = 0
+	MatchExactWord MatchClass = 1
+	MatchPrefix    MatchClass = 2
+	MatchSubstring MatchClass = 3
+	MatchFuzzy     MatchClass = 4
+	MatchNone      MatchClass = 9
 )
 
 // String renders a MatchClass as a stable string label (used in

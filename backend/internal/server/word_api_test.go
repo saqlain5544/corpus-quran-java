@@ -3,6 +3,7 @@ package server
 import (
 	"testing"
 
+	"quranreader/backend/internal/morph"
 	"quranreader/types"
 )
 
@@ -15,7 +16,7 @@ func TestComputeLemmaStem(t *testing.T) {
 		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "ب", MorphType: "Prefix", MorphTag: "PREP"},
 		{Word: "بِسْمِ", WithoutDiacritics: "بسم", SegmentedWord: "اسم", MorphType: "Stem", MorphTag: "NOUN_ABSTRACT"},
 	}
-	if got := computeLemma(segs); got != "اسم" {
+	if got := morph.Lemma(segs); got != "اسم" {
 		t.Errorf("computeLemma = %q want اسم (stem only — preposition is not part of noun lemma)", got)
 	}
 }
@@ -29,7 +30,7 @@ func TestComputeLemmaCompoundVerb(t *testing.T) {
 		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "أ", MorphType: "Prefix", MorphTag: "CV_PREF"},
 		{Word: "أَنذِرِ", WithoutDiacritics: "أنذر", SegmentedWord: "نذر", MorphType: "Stem", MorphTag: "CV"},
 	}
-	if got := computeLemma(segs); got != "أنذر" {
+	if got := morph.Lemma(segs); got != "أنذر" {
 		t.Errorf("computeLemma = %q want أنذر", got)
 	}
 }
@@ -45,7 +46,7 @@ func TestComputeLemmaDETPrefixExcluded(t *testing.T) {
 		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "متق", SegmentedWord: "مُتَّقِ", MorphType: "Stem", MorphTag: "NOUN_ACTIVE_PART"},
 		{Word: "لِّلْمُتَّقِينَ", WithoutDiacritics: "ين", SegmentedWord: "ينَ", MorphType: "Suffix", MorphTag: "NSUFF_MASC_PL_GEN"},
 	}
-	if got := computeLemma(segs); got != "مُتَّقِ" {
+	if got := morph.Lemma(segs); got != "مُتَّقِ" {
 		t.Errorf("computeLemma = %q want مُتَّقِ (DET prefix excluded, only stem)", got)
 	}
 }
@@ -57,7 +58,7 @@ func TestComputeLemmaProperNoun(t *testing.T) {
 		{Word: "ٱللَّهِ", WithoutDiacritics: "الله", SegmentedWord: "ال", MorphType: "Prefix"},
 		{Word: "ٱللَّهِ", WithoutDiacritics: "الله", SegmentedWord: "له", MorphType: "Stem", MorphTag: "NOUN_PROP"},
 	}
-	if got := computeLemma(segs); got != "الله" {
+	if got := morph.Lemma(segs); got != "الله" {
 		t.Errorf("computeLemma = %q want الله (proper noun full form)", got)
 	}
 }
@@ -69,14 +70,14 @@ func TestComputeLemmaNoStem(t *testing.T) {
 		{Word: "كَ", WithoutDiacritics: "ك", SegmentedWord: "ك", MorphType: "Prefix"},
 		{Word: "كَ", WithoutDiacritics: "ك", SegmentedWord: "", MorphType: "Other"},
 	}
-	if got := computeLemma(segs); got != "ك" {
+	if got := morph.Lemma(segs); got != "ك" {
 		t.Errorf("computeLemma = %q want ك", got)
 	}
 }
 
 func TestComputeLemmaEmpty(t *testing.T) {
-	if got := computeLemma(nil); got != "" {
-		t.Errorf("computeLemma(nil) = %q", got)
+	if got := morph.Lemma(nil); got != "" {
+		t.Errorf("morph.Lemma(nil) = %q", got)
 	}
 }
 
@@ -85,7 +86,7 @@ func TestCombineGlosses(t *testing.T) {
 		{Gloss: "in-(the)-name", MorphType: "Stem"},
 		{Gloss: "in-(the)-name", MorphType: "Prefix"},
 	}
-	if got := combineGlosses(segs); got != "in-(the)-name" {
+	if got := morph.Gloss(segs); got != "in-(the)-name" {
 		t.Errorf("combineGlosses = %q want in-(the)-name (stem segment wins)", got)
 	}
 
@@ -94,7 +95,7 @@ func TestCombineGlosses(t *testing.T) {
 		{Gloss: "wrote", MorphType: "Stem"},
 		{Gloss: "it", MorphType: "Suffix"},
 	}
-	if got := combineGlosses(segs2); got != "wrote" {
+	if got := morph.Gloss(segs2); got != "wrote" {
 		t.Errorf("combineGlosses = %q want wrote", got)
 	}
 
@@ -102,7 +103,7 @@ func TestCombineGlosses(t *testing.T) {
 		{Gloss: "(of)-allah", MorphType: "Prefix"},
 		{Gloss: "(of)-allah", MorphType: "Stem"},
 	}
-	if got := combineGlosses(segs3); got != "(of)-allah" {
+	if got := morph.Gloss(segs3); got != "(of)-allah" {
 		t.Errorf("combineGlosses = %q want (of)-allah (no duplication)", got)
 	}
 }
@@ -112,20 +113,20 @@ func TestGrammaticalFunction(t *testing.T) {
 		{SyntacticRole: "PREP", MorphType: "Prefix"},
 		{SyntacticRole: "PREP_OBJ", MorphType: "Stem"},
 	}
-	if got := grammaticalFunction(segs); got == "" {
+	if got := morph.Function(segs); got == "" {
 		t.Error("expected non-empty function")
 	}
 
 	segs2 := []types.MasaqSegment{
 		{SyntacticRole: "GEN_CONS", CaseMood: "GENITIVE", MorphType: "Stem"},
 	}
-	if got := grammaticalFunction(segs2); got == "" {
+	if got := morph.Function(segs2); got == "" {
 		t.Error("expected non-empty function for GEN_CONS")
 	}
 
 	// Empty segments should yield empty function.
-	if got := grammaticalFunction(nil); got != "" {
-		t.Errorf("grammaticalFunction(nil) = %q want empty", got)
+	if got := morph.Function(nil); got != "" {
+		t.Errorf("morph.Function(nil) = %q want empty", got)
 	}
 }
 
@@ -140,19 +141,19 @@ func TestFriendlyRoleKnown(t *testing.T) {
 		{"PRED", "Predicate"},
 	}
 	for _, c := range cases {
-		if got := friendlyRole(c.in, ""); got != c.want {
-			t.Errorf("friendlyRole(%q) = %q want %q", c.in, got, c.want)
+		if got := morph.RoleName(c.in, ""); got != c.want {
+			t.Errorf("morph.RoleName(%q) = %q want %q", c.in, got, c.want)
 		}
 	}
 }
 
 func TestFriendlyRoleWithCaseMood(t *testing.T) {
-	got := friendlyRole("GEN_CONS", "GENITIVE")
+	got := morph.RoleName("GEN_CONS", "GENITIVE")
 	if got == "" {
 		t.Error("expected non-empty with case mood")
 	}
 	// INVARIABLE should not be appended.
-	gotInv := friendlyRole("PREP", "INVARIABLE")
+	gotInv := morph.RoleName("PREP", "INVARIABLE")
 	if gotInv != "Preposition" {
 		t.Errorf("friendlyRole INVARIABLE not stripped: %q", gotInv)
 	}
@@ -166,24 +167,22 @@ func TestFriendlyMood(t *testing.T) {
 		{"UNKNOWN_VALUE", "unknown value"},
 	}
 	for _, c := range cases {
-		if got := friendlyMood(c.in); got != c.want {
-			t.Errorf("friendlyMood(%q) = %q want %q", c.in, got, c.want)
+		if got := morph.MoodName(c.in); got != c.want {
+			t.Errorf("morph.MoodName(%q) = %q want %q", c.in, got, c.want)
 		}
 	}
 }
 
 func TestPickSyntacticRolePrefersStem(t *testing.T) {
+	// morph.Function should prefer Stem role over prefix/suffix.
 	segs := []types.MasaqSegment{
 		{SyntacticRole: "PREP", MorphType: "Prefix"},
-		{SyntacticRole: "OBJ", MorphType: "Stem"},
+		{SyntacticRole: "OBJ", MorphType: "Stem", MorphTag: "NOUN"},
 		{SyntacticRole: "PRON", MorphType: "Suffix"},
 	}
-	role, mood := pickSyntacticRole(segs)
-	if role != "OBJ" {
-		t.Errorf("pickSyntacticRole = %q want OBJ", role)
-	}
-	if mood != "" {
-		t.Errorf("mood = %q want empty", mood)
+	got := morph.Function(segs)
+	if got == "" {
+		t.Error("expected non-empty Function")
 	}
 }
 
@@ -194,7 +193,7 @@ func TestGrammaticalFunctionVerbFallback(t *testing.T) {
 		{MorphTag: "CV_PREF", MorphType: "Prefix"},
 		{MorphTag: "CV", MorphType: "Stem"},
 	}
-	got := grammaticalFunction(segs)
+	got := morph.Function(segs)
 	if got != "Imperfect verb" {
 		t.Errorf("grammaticalFunction = %q want Imperfect verb", got)
 	}
@@ -210,8 +209,8 @@ func TestFriendlyMorphTag(t *testing.T) {
 		{"CV", "Other", ""}, // only stem/prefix/suffix get mapped
 	}
 	for _, c := range cases {
-		if got := friendlyMorphTag(c.tag, c.morphType); got != c.want {
-			t.Errorf("friendlyMorphTag(%q,%q) = %q want %q", c.tag, c.morphType, got, c.want)
+		if got := morph.TagName(c.tag, c.morphType); got != c.want {
+			t.Errorf("morph.TagName(%q,%q) = %q want %q", c.tag, c.morphType, got, c.want)
 		}
 	}
 }

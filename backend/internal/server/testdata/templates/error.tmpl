@@ -1,8 +1,15 @@
 {{define "error.tmpl"}}{{template "layout" .}}{{end}}
 {{define "content"}}
 <div class="error-page surface surface--elev measure-narrow">
-  <h1>{{.Status}}</h1>
-  <p>{{.Msg}}</p>
-  <p><a href="/">← Back to home</a></p>
+  <p class="error-status">{{.Status}}</p>
+  <h1>{{if .Title}}{{.Title}}{{else}}Something went wrong{{end}}</h1>
+  <p class="error-msg">{{.Msg}}</p>
+  {{if .Path}}<p class="error-path"><code>{{.Path}}</code></p>{{end}}
+  <nav class="error-actions" aria-label="What to do next">
+    <a class="error-action" href="/">← Home</a>
+    <a class="error-action" href="/search">Search</a>
+    <a class="error-action" href="/roots">Browse roots</a>
+    <a class="error-action" href="/concordance">Concordance</a>
+  </nav>
 </div>
 {{end}}

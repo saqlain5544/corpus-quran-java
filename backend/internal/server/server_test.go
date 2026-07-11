@@ -42,7 +42,7 @@ func testServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	q, m, r, meta, err := data.LoadAll(dbPath)
+	q, m, r, meta, _, err := data.LoadAll(dbPath)
 	if err != nil {
 		t.Skipf("database not available: %v", err)
 	}
@@ -53,8 +53,8 @@ func testServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	// fs.Sub returns fs.FS which doesn't have ReadFile/ReadDir; use
-	// our subFS wrapper to re-expose those methods.
-	wrapped := subRoot{fsys: rooted}
+	// our test-only subRootFS wrapper to re-expose those methods.
+	wrapped := subRootFS{fsys: rooted}
 	srv, err := New(q, m, r, meta, Options{
 		TemplatesFS:  wrapped,
 		StaticFS:     wrapped,

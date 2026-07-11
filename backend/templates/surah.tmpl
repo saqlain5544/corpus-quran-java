@@ -124,9 +124,45 @@
                   aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
                 {{- if $isLastWord -}}
                   <a class="ayah-number-link" href="#verse-{{$an}}" aria-label="Verse {{$an}}" title="Verse {{$an}}">
-                    <svg class="ayah-number" viewBox="0 0 24 24" width="1.4em" height="1.4em" aria-hidden="true">
-                      <circle cx="12" cy="13" r="11" class="ayah-number-bg"/>
-                      <text x="12" y="17" text-anchor="middle" class="ayah-number-text">{{$an}}</text>
+                    <svg class="ayah-number" viewBox="0 0 48 48" width="1.7em" height="1.7em" aria-hidden="true">
+                      {{/* Decorative outer frame — octagonal/star-shaped (8-point star inscribed in a circle).
+                          Quran.com and most modern mushaf apps use a similar decorative
+                          enclosure around the verse number. */}}
+                      <path class="ayah-number-bg" d="M24 1.5
+                               L29.8 4.5
+                               L36.6 3.4
+                               L40.5 9.1
+                               L46.5 13.2
+                               L45.4 20
+                               L48.5 25.8
+                               L43.8 31.4
+                               L44.9 38.2
+                               L38.7 41.3
+                               L34.6 47.3
+                               L27.8 46.2
+                               L24 48.5
+                               L20.2 46.2
+                               L13.4 47.3
+                               L9.3 41.3
+                               L3.1 38.2
+                               L4.2 31.4
+                               L-0.5 25.8
+                               L2.6 20
+                               L1.5 13.2
+                               L7.5 9.1
+                               L11.4 3.4
+                               L18.2 4.5
+                               Z"/>
+                      {{/* Inner ring — a thinner circle inside the decorative frame,
+                          gives a refined "double-line" look like classic mushaf prints. */}}
+                      <circle cx="24" cy="25" r="15" class="ayah-number-ring"/>
+                      {{/* Subtle inner background — solid gold fill so the number is
+                          legible against the lighter outer frame. */}}
+                      <circle cx="24" cy="25" r="14" class="ayah-number-fill"/>
+                      {{/* The verse number itself. dominant-baseline=central + text-anchor=middle
+                          keeps the digits perfectly centred both horizontally and
+                          vertically regardless of font size or digit count (1-3 digits). */}}
+                      <text x="24" y="25" text-anchor="middle" dominant-baseline="central" class="ayah-number-text">{{$an}}</text>
                     </svg>
                   </a>
                 {{- end -}}

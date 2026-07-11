@@ -1,0 +1,280 @@
+{{define "font_meta.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+{{/*
+  /meta/fonts — debug page visualising every codepoint in the Quran
+  text and every glyph in each font. See server/font_meta.go for the
+  data shape and the load order (cmaps embedded as JSON, parsed once
+  at startup).
+
+  Layout (this template):
+    <.page-fontmeta>
+      <.layout-header>        — title + lede, rendered by the global
+                                  layout header band (sticky/global-header
+                                  row above + this page's h1/meta)
+      <.fontmeta-toc>         — in-page TOC, non-sticky (visible only
+                                  when user is at the top)
+      <.fontmeta-section>     — five of them:
+                                    summary, quran, hafs, amiri, diff
+        <h2>                  — section heading (regular flow, scrolls
+                                  with content — see CSS for sticky
+                                  treatment at the table thead level)
+        <.fontmeta-section-note>
+        <.fontmeta-stats>     — only in #summary
+        <.fontmeta-table-wrap>
+          <.fontmeta-table>
+            <colgroup>        — column widths, kept in sync with
+                                  CSS rules so HTML reflects intent
+            <thead>           — STICKY (top: var(--gh-height) so it
+                                  sticks below the global header bar)
+            <tbody>           — rows of CodepointRow
+
+  Column widths are tuned for the most common case: a desktop browser
+  ≥ 900px wide. Below that, .fontmeta-table-wrap allows horizontal
+  scroll. Print styles (see font_meta.css @media print) hide the
+  rendered columns since they don't print well. */}}
+
+<div class="page-fontmeta">
+
+  <header class="layout-header">
+    <h1>Font metadata</h1>
+    <p class="layout-header-meta">
+      Visual reference for every codepoint in the Quran text and every
+      glyph in <strong>{{.HafsFontName}}</strong> and
+      <strong>{{.AmiriFontName}}</strong>. Use this when debugging why a
+      character renders as a dotted circle — the rendered columns show
+      what each font actually draws for the codepoint.
+    </p>
+  </header>
+
+  {{/* In-page TOC. Non-sticky; sits in the page flow above the first
+      section. Links to each section's anchor; the section h2 has
+      scroll-margin-top set so anchor jumps clear the sticky global
+      header. */}}
+  <nav class="fontmeta-toc" aria-label="Page sections">
+    <a href="#summary">Summary</a>
+    <a href="#quran">Quran</a>
+    <a href="#hafs">{{.HafsFontName}}</a>
+    <a href="#amiri">{{.AmiriFontName}}</a>
+    <a href="#diff">Diff</a>
+  </nav>
+
+  {{/* ─── Section 1: Summary stats ─────────────────────────────── */}}
+  <section id="summary" class="fontmeta-section fontmeta-summary">
+    <h2>Summary</h2>
+    <p class="fontmeta-section-note">
+      Computed at server startup from the embedded font cmaps (see
+      <code>scripts/extract-font-cmaps.py</code>) and the Quran text.
+    </p>
+    <dl class="fontmeta-stats">
+      <div class="stat">
+        <dt>Quran codepoints</dt>
+        <dd>{{.Stats.QuranUnique}}</dd>
+      </div>
+      <div class="stat">
+        <dt>{{.HafsFontName}} cmap</dt>
+        <dd>{{.Stats.HafsTotal}}</dd>
+      </div>
+      <div class="stat">
+        <dt>{{.AmiriFontName}} cmap</dt>
+        <dd>{{.Stats.AmiriTotal}}</dd>
+      </div>
+      <div class="stat">
+        <dt>Overlap</dt>
+        <dd>{{.Stats.Overlap}}</dd>
+      </div>
+      <div class="stat {{if eq .Stats.QuranHafsMiss 0}}ok{{else}}warn{{end}}">
+        <dt>Quran ∖ {{.HafsFontName}}</dt>
+        <dd>{{.Stats.QuranHafsMiss}}</dd>
+      </div>
+      <div class="stat {{if eq .Stats.QuranAmiriMiss 0}}ok{{else}}warn{{end}}">
+        <dt>Quran ∖ {{.AmiriFontName}}</dt>
+        <dd>{{.Stats.QuranAmiriMiss}}</dd>
+      </div>
+    </dl>
+    <p class="fontmeta-note">
+      <em>Quran ∖ Font</em> counts Quran codepoints missing from each
+      font's cmap. A zero value means the font covers every Quran
+      character at the cmap level — but rendering can still fail if
+      OpenType shaping tables don't handle the character (see
+      <code>backend/static/css/tokens.css</code> for the
+      <code>@font-face</code> rules).
+    </p>
+  </section>
+
+  {{/* ─── Section 2: Quran codepoints (the main debug view) ─────── */}}
+  <section id="quran" class="fontmeta-section">
+    <h2>1. Quran codepoints</h2>
+    <p class="fontmeta-section-note">
+      {{len .QuranCodepoints}} unique codepoints from the Quran text,
+      in codepoint order. Each "Rendered" cell shows what that font
+      actually draws for the codepoint — a dotted circle means the
+      codepoint isn't in the font's cmap.
+    </p>
+    <div class="fontmeta-table-wrap">
+      <table class="fontmeta-table fontmeta-table--quran">
+        {{/* Column widths in sync with CSS rules below */}}
+        <colgroup>
+          <col class="col-cp">
+          <col class="col-name">
+          <col class="col-count">
+          <col class="col-render">
+          <col class="col-render">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-cp">Codepoint</th>
+            <th class="col-name">Name</th>
+            <th class="col-count">Count</th>
+            <th class="col-render hafs-render" colspan="1">{{.HafsFontName}}</th>
+            <th class="col-render amiri-render" colspan="1">{{.AmiriFontName}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .QuranCodepoints}}
+          <tr>
+            <td class="col-cp"><code>{{.CPHex}}</code></td>
+            <td class="col-name" title="{{.Name}}">
+              <span class="name-truncate">{{.Name}}</span>
+              {{if not .InHafs}}<span class="badge miss-hafs" title="not in {{$.HafsFontName}} cmap">∅</span>{{end}}
+              {{if not .InAmiri}}<span class="badge miss-amiri" title="not in {{$.AmiriFontName}} cmap">∅</span>{{end}}
+            </td>
+            <td class="col-count">{{.Count}}</td>
+            <td class="col-render hafs-render" lang="ar" dir="rtl"
+                title="{{if .InHafs}}{{$.HafsFontName}} glyph: {{.GlyphHafs}}{{else}}{{$.HafsFontName}} has no glyph for this codepoint — .notdef fallback{{end}}">
+              <span class="render-glyph">{{.Char}}</span>
+            </td>
+            <td class="col-render amiri-render" lang="ar" dir="rtl"
+                title="{{if .InAmiri}}{{$.AmiriFontName}} glyph: {{.GlyphAmiri}}{{else}}{{$.AmiriFontName}} has no glyph for this codepoint — .notdef fallback{{end}}">
+              <span class="render-glyph">{{.Char}}</span>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{/* ─── Section 3: every glyph in Hafs ─────────────────────────── */}}
+  <section id="hafs" class="fontmeta-section">
+    <h2>2. Every glyph in {{.HafsFontName}}</h2>
+    <p class="fontmeta-section-note">
+      {{len .HafsCodepoints}} codepoints in
+      <code>hafs.woff2</code>'s cmap, in codepoint order. Rows for
+      codepoints actually used in the Quran text are tinted so you can
+      spot them fast.
+    </p>
+    <div class="fontmeta-table-wrap">
+      <table class="fontmeta-table fontmeta-table--glyphs">
+        <colgroup>
+          <col class="col-cp">
+          <col class="col-name">
+          <col class="col-glyphname">
+          <col class="col-render">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-cp">Codepoint</th>
+            <th class="col-name">Name</th>
+            <th class="col-glyphname">Glyph name</th>
+            <th class="col-render hafs-render">Rendered</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .HafsCodepoints}}
+          <tr {{if .InQuran}}class="in-quran"{{end}}>
+            <td class="col-cp"><code>{{.CPHex}}</code></td>
+            <td class="col-name" title="{{.Name}}"><span class="name-truncate">{{.Name}}</span></td>
+            <td class="col-glyphname"><code>{{.GlyphHafs}}</code></td>
+            <td class="col-render hafs-render" lang="ar" dir="rtl">{{.Char}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{/* ─── Section 4: every glyph in AmiriQuran ──────────────────── */}}
+  <section id="amiri" class="fontmeta-section">
+    <h2>3. Every glyph in {{.AmiriFontName}}</h2>
+    <p class="fontmeta-section-note">
+      {{len .AmiriCodepoints}} codepoints in
+      <code>{{.AmiriFontName}}.woff2</code>'s cmap. Currently used as
+      a fallback for U+06D8, U+06D9, U+06E1, U+06E3, U+06E5, U+06E6
+      via the <code>unicode-range</code> in <code>tokens.css</code>.
+    </p>
+    <div class="fontmeta-table-wrap">
+      <table class="fontmeta-table fontmeta-table--glyphs">
+        <colgroup>
+          <col class="col-cp">
+          <col class="col-name">
+          <col class="col-glyphname">
+          <col class="col-render">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-cp">Codepoint</th>
+            <th class="col-name">Name</th>
+            <th class="col-glyphname">Glyph name</th>
+            <th class="col-render amiri-render">Rendered</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .AmiriCodepoints}}
+          <tr {{if .InQuran}}class="in-quran"{{end}}>
+            <td class="col-cp"><code>{{.CPHex}}</code></td>
+            <td class="col-name" title="{{.Name}}"><span class="name-truncate">{{.Name}}</span></td>
+            <td class="col-glyphname"><code>{{.GlyphAmiri}}</code></td>
+            <td class="col-render amiri-render" lang="ar" dir="rtl">{{.Char}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {{/* ─── Section 5: diff (chars in exactly one font) ────────────── */}}
+  <section id="diff" class="fontmeta-section">
+    <h2>4. Diff: only in one font</h2>
+    <p class="fontmeta-section-note">
+      {{len .DiffRows}} codepoints in exactly one of the two font cmaps.
+      Most are ASCII punctuation that AmiriQuran covers but Hafs
+      doesn't (and vice versa). Useful when hunting for which font
+      has an obscure character.
+    </p>
+    <div class="fontmeta-table-wrap">
+      <table class="fontmeta-table fontmeta-table--diff">
+        <colgroup>
+          <col class="col-cp">
+          <col class="col-name">
+          <col class="col-only">
+          <col class="col-render">
+          <col class="col-render">
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-cp">Codepoint</th>
+            <th class="col-name">Name</th>
+            <th class="col-only">Only in</th>
+            <th class="col-render hafs-render">{{.HafsFontName}}</th>
+            <th class="col-render amiri-render">{{.AmiriFontName}}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .DiffRows}}
+          <tr class="diff-row">
+            <td class="col-cp"><code>{{.CPHex}}</code></td>
+            <td class="col-name" title="{{.Name}}"><span class="name-truncate">{{.Name}}</span></td>
+            <td class="col-only">
+              {{if .InHafs}}<span class="badge in-hafs">{{$.HafsFontName}}</span>{{else}}<span class="badge in-amiri">{{$.AmiriFontName}}</span>{{end}}
+            </td>
+            <td class="col-render hafs-render" lang="ar" dir="rtl">{{.Char}}</td>
+            <td class="col-render amiri-render" lang="ar" dir="rtl">{{.Char}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+{{end}}

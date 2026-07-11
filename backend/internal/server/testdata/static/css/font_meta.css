@@ -1,0 +1,428 @@
+/* font_meta.css — styling for the /meta/fonts debug page.
+ *
+ * Layout strategy (this file):
+ *
+ *   The .page grid (12 columns with 2-col gutters) places direct
+ *   children in cols 3-10 (skipping 2-col gutters on each side).
+ *   For a debug page like this, that's too narrow for tables, so
+ *   .page-fontmeta breaks out: grid-column: 1 / -1, then sets its
+ *   own max-width and centering. This is the same pattern used by
+ *   .page-surah.
+ *
+ *   Inside the page we use a simple block flow (no sub-grid) — the
+ *   tables themselves do the column layout. Column widths use a
+ *   mix of fixed + flexible: fixed for codepoint / count / rendered
+ *   columns (so they stay compact), flexible (min-content) for the
+ *   name column, with overflow:hidden + text-overflow:ellipsis
+ *   so long names truncate cleanly.
+ *
+ * Sticky strategy:
+ *   - global-header is sticky at top: 0.
+ *   - Each table thead is sticky at top: var(--gh-height) (56px).
+ *     The thead's `position: sticky` works against the page's
+ *     scroll because .fontmeta-table-wrap has overflow: visible
+ *     (no internal scroll container) — see the comment on
+ *     .fontmeta-table-wrap below.
+ *
+ * Column layout:
+ *   - Each table has a <colgroup> in the template that mirrors the
+ *     column-width rules in this file. Keep both in sync when
+ *     adding/removing columns.
+ *   - The rendered glyph column gets font-family pinned to the
+ *     respective font so the browser draws each font's actual
+ *     glyph, not a system fallback.
+ */
+
+/* ── Page container ──────────────────────────────────────────── */
+.page-fontmeta {
+  /* Break out of the .page 12-col grid (which places direct children
+   * in cols 3-10 with 2-col gutters on each side). Without this, the
+   * page gets ~17% margins on both sides that aren't useful for a
+   * data-table page. */
+  grid-column: 1 / -1;
+  /* Cap width so very-wide viewports still leave some breathing
+   * room — but be wider than the standard .page (80rem) so the
+   * tables have room for all their columns. */
+  max-width: 96rem;
+  margin: 0 auto;
+  /* Even horizontal padding, comfortable vertical. */
+  padding: var(--sp-6) var(--sp-6) var(--sp-16);
+  /* Constrain block-level layout — table widths go above this if
+   * needed (and the wrap handles horizontal scroll on small screens
+   * via the @media query at the bottom). */
+  min-width: 0;
+}
+
+/* ── Page header (uses the standard .layout-header band) ──────── */
+.page-fontmeta .layout-header {
+  margin-bottom: var(--sp-4);
+}
+
+/* ── In-page TOC ─────────────────────────────────────────────── */
+.fontmeta-toc {
+  display: flex;
+  gap: var(--sp-1);
+  flex-wrap: wrap;
+  padding: var(--sp-2);
+  margin-bottom: var(--sp-6);
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+}
+.fontmeta-toc a {
+  display: inline-block;
+  padding: var(--sp-1) var(--sp-3);
+  font: 600 var(--fs-sm)/1 var(--font-latin);
+  color: var(--ink-soft);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: background var(--dur-fast), color var(--dur-fast);
+}
+.fontmeta-toc a:hover {
+  background: var(--word-hover-bg);
+  color: var(--ink);
+}
+.fontmeta-toc a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Section blocks ─────────────────────────────────────────── */
+.fontmeta-section {
+  margin-bottom: var(--sp-12);
+  /* Anchor jumps land here, just below the sticky global header.
+   * Without this, anchor-target scrolling would hide the h2 under
+   * the global header. */
+  scroll-margin-top: calc(var(--gh-height) + var(--sp-3));
+}
+.fontmeta-section h2 {
+  margin: 0 0 var(--sp-2);
+  padding-bottom: var(--sp-2);
+  font: 600 var(--fs-xl)/1.2 var(--font-latin);
+  color: var(--ink);
+  border-bottom: 1px solid var(--rule);
+}
+.fontmeta-section-note {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  max-width: 65ch;
+}
+.fontmeta-section-note code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--bg-sunken);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Stats grid (Summary section) ──────────────────────────── */
+.fontmeta-stats {
+  display: grid;
+  /* Six stat cards. On wide screens we want them all on one row;
+   * on narrow screens, wrap to 2-3 columns. minmax(10rem, 1fr)
+   * gives a comfortable minimum width per card. */
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-4);
+  padding: 0;
+}
+.fontmeta-stats .stat {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.fontmeta-stats dt {
+  font: 600 var(--fs-xs)/1.3 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fontmeta-stats dd {
+  margin: 0;
+  font: 700 var(--fs-2xl)/1 var(--font-latin);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+/* Colour the gap-stat cards. "warn" means "non-zero gap"; "ok"
+ * means "no gap". A green-tinted zero gives a positive signal that
+ * the font covers the entire Quran at the cmap level. */
+.fontmeta-stats .stat.warn dd {
+  color: var(--accent-strong);
+}
+.fontmeta-stats .stat.ok dd {
+  color: oklch(from var(--accent-strong) calc(l * 0.7) c h / 1);
+}
+.fontmeta-note {
+  font-size: var(--fs-sm);
+  color: var(--ink-soft);
+  max-width: 70ch;
+  margin: 0;
+}
+.fontmeta-note em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ── Tables ─────────────────────────────────────────────────── */
+/* Wrap holds the table's chrome (border, radius) and provides a
+ * horizontal-scroll fallback for narrow viewports via the @media
+ * query at the bottom. We do NOT set overflow-x here at the default
+ * breakpoint because that would create a scroll container and break
+ * the sticky thead positioning (the thead would stick to the wrap
+ * instead of the viewport). */
+.fontmeta-table-wrap {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elev);
+}
+
+.fontmeta-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+  font-family: var(--font-latin);
+  table-layout: auto; /* let cells size to their content + style rules */
+}
+
+/* Column widths via <col> elements + matching td/th rules.
+ * Each rule applies to BOTH the <th> (header) and <td> (body cell).
+ * Strategy: fixed widths for short columns (cp / count / glyphname /
+ * render / only), flexible for the name column (min-width +
+ * ellipsis truncation). The whole table has minimum content width
+ * so it doesn't squish below what's readable; the @media query at
+ * the bottom falls back to horizontal scroll when the viewport
+ * can't accommodate that minimum. */
+.fontmeta-table col.col-cp { width: 5rem; }
+.fontmeta-table col.col-name {
+  /* name is the one flexible column. min-width keeps long names
+   * readable (they truncate, but at least the column is wide
+   * enough to read the first 12 characters). max-width caps it
+   * so very long names don't dominate. */
+  width: auto;
+  min-width: 12rem;
+  max-width: 22rem;
+}
+.fontmeta-table col.col-count { width: 4.5rem; }
+.fontmeta-table col.col-glyphname { width: 8rem; }
+.fontmeta-table col.col-render { width: 4rem; }
+.fontmeta-table col.col-only { width: 9rem; }
+
+/* Per-cell alignment + min-width = 0 so flexbox/grid parents
+ * don't blow out the column. */
+.fontmeta-table th,
+.fontmeta-table td {
+  min-width: 0;
+  vertical-align: middle;
+}
+
+/* Sticky thead. top: var(--gh-height) places it just below the
+ * global header (which is sticky at top: 0). z-index 10 keeps it
+ * above row content but below the global header (z-index 100). */
+.fontmeta-table thead th {
+  position: sticky;
+  top: var(--gh-height);
+  z-index: 10;
+  background: var(--bg-elev);
+  text-align: left;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--panel-border);
+  font: 600 var(--fs-xs)/1.3 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.fontmeta-table thead th.col-count { text-align: right; }
+.fontmeta-table thead th.col-render,
+.fontmeta-table thead th.col-only {
+  text-align: center;
+}
+
+/* Body rows. Alternating row backgrounds are a faint tint of the
+ * page background so they read as "every other" without competing
+ * with the cell content. */
+.fontmeta-table tbody tr {
+  border-bottom: 1px solid var(--rule);
+}
+.fontmeta-table tbody tr:last-child {
+  border-bottom: 0;
+}
+.fontmeta-table tbody tr:nth-child(even) {
+  background: oklch(from var(--bg-sunken) calc(l - 1) c h / 0.4);
+}
+.fontmeta-table tbody tr:hover {
+  background: var(--word-hover-bg);
+}
+
+/* Section-specific row tints:
+ *   - in-quran: row codepoint appears in Quran text (sections 2-3).
+ *   - diff-row: row codepoint is in exactly one font (section 4). */
+.fontmeta-table tbody tr.in-quran {
+  background: oklch(from var(--accent) l c h / 0.05);
+  border-inline-start: 2px solid var(--accent);
+}
+.fontmeta-table tbody tr.in-quran:nth-child(even) {
+  background: oklch(from var(--accent) l c h / 0.08);
+}
+.fontmeta-table tbody tr.diff-row {
+  background: oklch(from var(--accent) l c h / 0.06);
+  border-inline-start: 2px solid var(--accent);
+}
+.fontmeta-table tbody tr.diff-row:nth-child(even) {
+  background: oklch(from var(--accent) l c h / 0.09);
+}
+
+/* Cell padding — light vertical, generous horizontal. */
+.fontmeta-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--rule);
+}
+.fontmeta-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Per-column cell styling. */
+td.col-cp code,
+th.col-cp {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+td.col-name {
+  padding-inline-end: var(--sp-2);
+}
+.name-truncate {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+td.col-count {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+td.col-glyphname code {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+td.col-render {
+  text-align: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  /* Generous vertical padding so the rendered glyph has breathing
+   * room — the cell is taller than the text cells next to it. */
+  padding-block: var(--sp-3);
+}
+td.col-only {
+  text-align: center;
+  font-size: var(--fs-sm);
+  vertical-align: middle;
+}
+
+/* Pin the rendered columns to their respective fonts. Without this,
+ * the browser would use the cascade and fall back to a non-Quranic
+ * font for characters both fonts lack — defeating the purpose of
+ * the page (see comment at top of file). */
+.hafs-render {
+  font-family: "Hafs", "Amiri Quran", serif;
+}
+.amiri-render {
+  font-family: "AmiriQuran", "Amiri Quran", serif;
+}
+
+/* Badges — small inline indicators for "missing from font" status
+ * (Section 1) and "only in this font" status (Section 4). */
+.badge {
+  display: inline-block;
+  margin-inline-start: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-sm);
+  font: 700 var(--fs-xs)/1.6 var(--font-latin);
+  background: var(--accent);
+  color: var(--bg-elev);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.badge.miss-hafs {
+  background: oklch(from var(--accent-strong) l c h / 1);
+  color: var(--bg-elev);
+}
+.badge.miss-amiri {
+  background: var(--ink-muted);
+  color: var(--bg-elev);
+}
+.badge.in-hafs {
+  background: oklch(from var(--accent-strong) l c h / 0.85);
+  color: var(--bg-elev);
+}
+.badge.in-amiri {
+  background: var(--ink-muted);
+  color: var(--bg-elev);
+}
+
+/* ── Narrow-viewport fallback ─────────────────────────────────
+ * On viewports narrower than the table's minimum content width
+ * (≈ 36rem = cp + name + count + 2×render), we fall back to a
+ * horizontal scroll inside the wrap. The sticky thead has to be
+ * disabled in this case — position: sticky against a scroll
+ * container that's narrower than the table doesn't give useful
+ * behaviour. */
+@media (max-width: 720px) {
+  .page-fontmeta {
+    padding: var(--sp-4) var(--sp-3);
+  }
+  .fontmeta-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .fontmeta-table thead th {
+    position: static;
+  }
+  /* Loosen the name column's max-width so the table fits narrower
+   * viewports without horizontal scroll. */
+  .fontmeta-table col.col-name {
+    max-width: none;
+  }
+}
+
+/* ── Print ──────────────────────────────────────────────────── */
+@media print {
+  /* Hide rendered columns in print — they don't print well and the
+   * data tables are the useful part. Keep section headings visible
+   * but unstick them. */
+  .col-render,
+  .fontmeta-toc {
+    display: none;
+  }
+  .fontmeta-table thead th {
+    position: static;
+  }
+  .fontmeta-section h2 {
+    page-break-after: avoid;
+  }
+  .fontmeta-table tr {
+    page-break-inside: avoid;
+  }
+}
+
+/* ── Reduced motion ─────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .fontmeta-toc a {
+    transition: none;
+  }
+}

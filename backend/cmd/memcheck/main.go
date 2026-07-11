@@ -17,7 +17,7 @@ func main() {
 	if len(os.Args) > 1 {
 		dbPath = os.Args[1]
 	}
-	q, m, r, meta, err := data.LoadAll(dbPath)
+	q, m, r, meta, _, err := data.LoadAll(dbPath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "load:", err)
 		os.Exit(1)

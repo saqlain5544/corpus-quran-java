@@ -17,6 +17,20 @@
   <link rel="stylesheet" href="/static/css/surfaces.css">
   <link rel="stylesheet" href="/static/css/quran.css">
   <link rel="stylesheet" href="/static/css/components.css">
+  <link rel="stylesheet" href="/static/css/font_meta.css">
+  <noscript>
+    <style>
+      /* Hide features that require JS so the static page is clean. */
+      #word-tooltip,
+      .ssp-close,
+      .surah-side-panel,
+      .continue-reading,
+      [data-component="bookmarks-toggle"],
+      [data-component="theme-toggle"],
+      [data-component="bookmarks-drawer"],
+      [data-component="gh-recent"] { display: none !important; }
+    </style>
+  </noscript>
 </head>
 <body class="app" data-page="{{.Title}}">
   <a class="skip" href="#main">Skip to content</a>
@@ -25,13 +39,15 @@
     {{block "content" .}}{{end}}
   </main>
   <div id="word-tooltip" class="word-tooltip" role="tooltip" hidden></div>
+  <script src="/static/js/storage.js" defer></script>
+  <script src="/static/js/dom.js" defer></script>
   <script src="/static/js/app.js" defer></script>
   <script src="/static/js/global-header.js" defer></script>
   <script src="/static/js/recent-searches.js" defer></script>
   <script src="/static/js/surah-header.js" defer></script>
   <script src="/static/js/verse-scroll.js" defer></script>
   <script src="/static/js/word-tooltip.js" defer></script>
-  <script src="/static/js/surah-side-panel.js" defer></script>
+  <script src="/static/js/surah-side-panel.js?v=2" defer></script>
   <script src="/static/js/bookmarks.js" defer></script>
   <script src="/static/js/continue-reading.js" defer></script>
 </body>
