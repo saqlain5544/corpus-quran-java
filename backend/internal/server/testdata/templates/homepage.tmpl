@@ -1,0 +1,57 @@
+{{define "homepage.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-home">
+  <header class="layout-header">
+    <h1>Quran Reader</h1>
+    <p class="layout-header-meta">Read, search, and explore the Quran with full morphology.</p>
+  </header>
+
+  <!-- Continue-reading banner — populated by continue-reading.js
+       from localStorage. Hidden when no last-read is recorded. -->
+  <aside class="continue-reading" data-component="continue-reading" hidden
+         aria-label="Continue reading"></aside>
+
+  {{if .Stats}}
+  <ol class="home-stats" aria-label="Quran statistics">
+    <li class="home-stat">
+      <span class="home-stat-num">{{.Stats.SurahCount}}</span>
+      <span class="home-stat-label">surahs</span>
+    </li>
+    <li class="home-stat">
+      <span class="home-stat-num">{{.Stats.AyahCount}}</span>
+      <span class="home-stat-label">ayahs</span>
+    </li>
+    <li class="home-stat">
+      <span class="home-stat-num">{{.Stats.WordCount}}</span>
+      <span class="home-stat-label">words</span>
+    </li>
+    <li class="home-stat">
+      <span class="home-stat-num">{{.Stats.RootCount}}</span>
+      <span class="home-stat-label">roots</span>
+    </li>
+    {{if gt .Stats.TranslationCount 0}}
+    <li class="home-stat">
+      <span class="home-stat-num">{{.Stats.TranslationCount}}</span>
+      <span class="home-stat-label">translations</span>
+    </li>
+    {{end}}
+  </ol>
+  {{end}}
+
+  <section class="surface surface--bare" aria-label="Surahs">
+    <ol class="surah-grid">
+      {{range $i, $s := .Surahs}}
+        <li class="surah-card">
+          <a class="surah-link" href="/surah/{{$s.Number}}">
+            <span class="surah-number">{{$s.Number}}{{if $s.RevelationType}} <span class="surah-rev-type" data-type="{{$s.RevelationType}}">{{$s.RevelationType}}</span>{{end}}</span>
+            <span class="surah-name" lang="ar" dir="rtl">{{$s.Name}}</span>
+            {{if $s.NameLatin}}<span class="surah-latin">{{$s.NameLatin}}</span>{{end}}
+            {{if $s.EnglishTranslation}}<p class="surah-translation">{{$s.EnglishTranslation}}</p>{{end}}
+            <span class="surah-count">{{index $.Meta.AyahCounts $i}} ayahs</span>
+          </a>
+        </li>
+      {{end}}
+    </ol>
+  </section>
+</div>
+{{end}}

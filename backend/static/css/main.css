@@ -1,0 +1,1608 @@
+/* ===================================================================
+   Quran Reader — main.css
+   Single consolidated stylesheet.
+   Typography-first, editorial UI, vanilla JS companion.
+   =================================================================== */
+
+/* ── 1. Design Tokens ─────────────────────────────────────────── */
+:root {
+  /* ── Spacing scale (multiples of 4px) ── */
+  --sp-1:  0.25rem;  /* 4px  */
+  --sp-2:  0.5rem;   /* 8px  */
+  --sp-3:  0.75rem;  /* 12px */
+  --sp-4:  1rem;     /* 16px */
+  --sp-5:  1.25rem;  /* 20px */
+  --sp-6:  1.5rem;   /* 24px */
+  --sp-8:  2rem;     /* 32px */
+  --sp-10: 2.5rem;   /* 40px */
+  --sp-12: 3rem;     /* 48px */
+  --sp-16: 4rem;     /* 64px */
+  --sp-20: 5rem;     /* 80px */
+
+  /* ── Typography ── */
+  --font-sans:  system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-arabic: "Hafs", "Amiri Quran", "Amiri", "Traditional Arabic", serif;
+  --fs-base:    1rem;
+  --fs-sm:      0.875rem;
+  --fs-lg:      1.125rem;
+  --fs-xl:      1.25rem;
+  --fs-2xl:     1.5rem;
+  --fs-3xl:     1.875rem;
+  --lh-tight:   1.25;
+  --lh-snug:    1.5;
+  --lh-normal:  1.625;
+  --lh-loose:   2;
+
+  /* ── Quran reading size (user-controlled via slider) ── */
+  --fs-quran:  1.375rem;   /* 22px default */
+  --lh-quran:  2;
+
+  /* ── Colours: Light theme ── */
+  --bg:        #faf8f5;
+  --surface:   #ffffff;
+  --surface--bare: #f0ede8;
+  --border:    #ddd8d0;
+  --border-strong: #b8b0a4;
+  --text:      #1a1814;
+  --text-muted:#6b6560;
+  --text-faint:#a09890;
+  --accent:    #7a4f18;
+  --accent-bg: #f5ede0;
+  --link:      #1d4ed8;
+  --link-hover:#1e3a8a;
+  --mark-pause:#b45309;
+  --mark-sajdah:#dc2626;
+  --mark-rub:  #d97706;
+  --word-hover-bg: #f0ebe3;
+  --ayah-focus-bg: rgba(122, 79, 24, 0.08);
+  --success:   #15803d;
+  --warn:      #b45309;
+
+  /* ── Surah side panel ── */
+  --ssp-width:  320px;
+  --ssp-left:   0px;
+
+  /* ── Global header ── */
+  --gh-height: 56px;
+
+  /* ── Z-index scale ── */
+  --z-base:     0;
+  --z-sticky:   100;
+  --z-drawer:   200;
+  --z-overlay:  300;
+  --z-tooltip:  400;
+  --z-modal:    500;
+
+  /* ── Radii ── */
+  --radius-sm: 3px;
+  --radius:    6px;
+  --radius-lg: 10px;
+}
+
+/* ── 2. Font faces ─────────────────────────────────────────────── */
+/* Hafs: primary Arabic font (Uthmani Quran script). Excludes
+ * U+06E3 which is missing from Hafs's GPOS MarkCoverage. */
+@font-face {
+  font-family: "Hafs";
+  src: url("/fonts/hafs.woff2") format("woff2");
+  font-display: swap;
+  unicode-range:
+    U+0600-06E2, U+06E4-06FF,
+    U+0750-077F, U+08A0-08FF,
+    U+FB50-FDFF, U+FE70-FEFF;
+}
+/* AmiriQuran override: same family name so the browser composites
+ * it with the Hafs face above and uses it ONLY for U+06E3 (and a
+ * few nearby marks) that Hafs cannot render. */
+@font-face {
+  font-family: "Hafs";
+  src: url("/fonts/AmiriQuran-Regular.woff2") format("woff2");
+  font-display: swap;
+  unicode-range: U+06D8, U+06D9, U+06E1, U+06E3, U+06E5, U+06E6;
+}
+
+[data-theme="dark"] {
+  --bg:             #111110;
+  --surface:        #1a1917;
+  --surface--bare:  #211f1c;
+  --border:         #33302a;
+  --border-strong:  #504840;
+  --text:           #ede9e3;
+  --text-muted:     #9c9288;
+  --text-faint:     #605850;
+  --accent:         #d4a855;
+  --accent-bg:      #2a2015;
+  --link:           #93c5fd;
+  --link-hover:     #bfdbfe;
+  --mark-pause:     #fbbf24;
+  --mark-sajdah:    #f87171;
+  --mark-rub:       #fbbf24;
+  --word-hover-bg:  #252219;
+  --ayah-focus-bg:  rgba(212, 168, 85, 0.12);
+}
+
+/* ── 2. Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--fs-base);
+  line-height: var(--lh-normal);
+  color: var(--text);
+  background: var(--bg);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+/* Text selection */
+::selection { background: var(--accent-bg); color: var(--text); }
+
+/* Focus ring — consistent, not browser default */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+img, svg { display: block; max-width: 100%; }
+button { font: inherit; cursor: pointer; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* Skip link */
+.skip {
+  position: absolute;
+  top: -100%;
+  left: var(--sp-4);
+  z-index: var(--z-modal);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0 0 var(--radius) var(--radius);
+  text-decoration: none;
+  transition: top 0.15s;
+}
+.skip:focus { top: 0; }
+
+/* ── 3. Typography utilities ───────────────────────────────────── */
+.surface h1, .surface h2, .surface h3, .surface h4 {
+  font-weight: 700;
+  line-height: var(--lh-tight);
+  color: var(--text);
+}
+.surface h1 { font-size: var(--fs-2xl); }
+.surface h2 { font-size: var(--fs-xl); margin-bottom: var(--sp-3); }
+.surface h3 { font-size: var(--fs-lg); margin-bottom: var(--sp-2); }
+.surface h4 { font-size: var(--fs-base); margin-bottom: var(--sp-1); }
+
+.surface p { margin-bottom: var(--sp-3); }
+.surface p:last-child { margin-bottom: 0; }
+
+dl { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-4); }
+dt { color: var(--text-muted); font-size: var(--fs-sm); white-space: nowrap; }
+dd { font-size: var(--fs-sm); }
+
+code {
+  font-size: 0.875em;
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.35em;
+}
+
+small { font-size: var(--fs-sm); color: var(--text-muted); }
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: var(--sp-6) 0;
+}
+
+/* ── 4. Layout shell ──────────────────────────────────────────── */
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.page {
+  flex: 1;
+  padding-top: var(--gh-height);
+}
+
+/* ── 5. Global header ──────────────────────────────────────────── */
+.global-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-sticky);
+  height: var(--gh-height);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+
+.gh-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-6);
+}
+
+/* Brand */
+.gh-brand {
+  font-weight: 700;
+  font-size: var(--fs-lg);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.gh-brand:hover { text-decoration: none; color: var(--accent); }
+
+/* Search */
+.gh-search-wrap { flex: 1; max-width: 480px; position: relative; }
+
+.gh-search {
+  display: flex;
+  gap: var(--sp-1);
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-1) var(--sp-2);
+  transition: border-color 0.15s;
+}
+.gh-search:focus-within { border-color: var(--accent); }
+
+.gh-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  outline: none;
+  min-width: 0;
+}
+.gh-search input::placeholder { color: var(--text-faint); }
+
+.gh-search select {
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  outline: none;
+}
+
+.gh-search button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+.gh-search button:hover { opacity: 0.85; }
+
+/* Desktop nav */
+.gh-nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex-shrink: 0;
+}
+
+.gh-nav a,
+.gh-bookmarks,
+.gh-theme {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+.gh-nav a:hover,
+.gh-bookmarks:hover,
+.gh-theme:hover {
+  color: var(--text);
+  background: var(--surface--bare);
+  text-decoration: none;
+}
+
+.gh-bookmarks,
+.gh-theme {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: var(--fs-lg);
+  width: 2rem;
+  height: 2rem;
+}
+
+/* Hamburger — mobile only */
+.gh-hamburger {
+  display: none;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: var(--sp-2);
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.gh-hamburger:hover { background: var(--surface--bare); }
+
+/* Mobile actions */
+.gh-actions-mobile { display: none; }
+
+/* Mobile drawer — shown with .is-open, hidden on desktop */
+.gh-nav-drawer {
+  position: fixed;
+  top: var(--gh-height);
+  left: 0;
+  right: 0;
+  z-index: var(--z-drawer);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-4);
+  display: none; /* hidden on desktop by default */
+  flex-direction: column;
+  gap: var(--sp-2);
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+.gh-nav-drawer.is-open { display: flex; }
+
+@media (max-width: 900px) {
+  .gh-nav-drawer { display: none; }
+  .gh-nav-drawer.is-open { display: flex; }
+}
+
+.gh-nav-drawer a {
+  display: block;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text);
+  font-weight: 500;
+  border-radius: var(--radius);
+  text-decoration: none;
+}
+.gh-nav-drawer a:hover { background: var(--surface--bare); text-decoration: none; }
+
+/* Bookmarks drawer (global header) */
+.gh-bookmarks-drawer {
+  position: fixed;
+  top: var(--gh-height);
+  right: var(--sp-4);
+  z-index: var(--z-drawer);
+  width: 300px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  padding: var(--sp-4);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.gh-bookmarks-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--sp-3);
+  padding-bottom: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.gh-bookmarks-title { font-weight: 700; font-size: var(--fs-sm); }
+.gh-bookmarks-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4em;
+  height: 1.4em;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 0.75em;
+  font-weight: 700;
+  padding: 0 var(--sp-1);
+}
+.gh-bookmarks-head button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.gh-bookmarks-head button:hover { background: var(--surface--bare); color: var(--text); }
+.gh-bookmarks-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.gh-bookmarks-list li { display: flex; align-items: center; gap: var(--sp-2); }
+.gh-bookmarks-list a { flex: 1; font-size: var(--fs-sm); color: var(--link); padding: var(--sp-1) 0; }
+.gbk-remove {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: var(--sp-1);
+  border-radius: var(--radius-sm);
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.gbk-remove:hover { background: var(--surface--bare); color: var(--text); }
+.gh-bookmarks-empty { font-size: var(--fs-sm); color: var(--text-muted); text-align: center; padding: var(--sp-6) 0; }
+
+/* Recent searches */
+.gh-recent {
+  position: absolute;
+  top: calc(100% + var(--sp-2));
+  left: 0;
+  right: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+  z-index: var(--z-overlay);
+  padding: var(--sp-3);
+}
+.gh-recent-head {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: var(--sp-2);
+}
+.gh-recent-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.gh-recent-list li a { font-size: var(--fs-sm); color: var(--text); display: block; padding: var(--sp-1) 0; }
+.gh-recent-list li a:hover { color: var(--accent); }
+.gh-recent-clear {
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: var(--sp-1) 0;
+  margin-top: var(--sp-2);
+}
+.gh-recent-clear:hover { color: var(--text); }
+
+/* ── 6. Surface / card ────────────────────────────────────────── */
+.surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6);
+}
+.surface--bare {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+.surface--elev {
+  box-shadow: 0 4px 16px rgba(0,0,0,.08);
+}
+
+/* ── 7. Layout helpers ─────────────────────────────────────────── */
+.layout-header {
+  padding: var(--sp-8) 0 var(--sp-6);
+}
+.layout-header h1 { margin-bottom: var(--sp-2); }
+.layout-header-meta { color: var(--text-muted); font-size: var(--fs-sm); }
+.layout-header-actions { margin-top: var(--sp-4); }
+
+.layout-shell { display: grid; gap: var(--sp-8); }
+.layout-shell--two-col { grid-template-columns: 1fr; }
+.layout-aside { margin-top: var(--sp-6); }
+.layout-aside--sticky { position: sticky; top: calc(var(--gh-height) + var(--sp-8)); }
+
+.stack { display: flex; flex-direction: column; gap: var(--sp-6); }
+.stack--tight { gap: var(--sp-3); }
+
+.cluster { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-3); }
+
+.measure-base { max-width: 680px; margin: 0 auto; }
+.measure-wide { max-width: 900px; margin: 0 auto; }
+.measure-narrow { max-width: 520px; margin: 0 auto; }
+
+/* ── 8. Page: Homepage ─────────────────────────────────────────── */
+.page-home { max-width: 960px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+
+.home-stats {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: var(--sp-6) 0;
+}
+.home-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-6) var(--sp-8);
+  min-width: 100px;
+}
+.home-stat-num {
+  font-size: var(--fs-3xl);
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.home-stat-label { font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* Surah grid */
+.surah-grid {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+}
+
+.surah-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.surah-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,.06);
+}
+
+.surah-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
+  text-decoration: none;
+  color: var(--text);
+  height: 100%;
+}
+.surah-link:hover { text-decoration: none; }
+
+.surah-number {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.surah-rev-type {
+  font-size: 0.7em;
+  font-weight: 600;
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.surah-rev-type[data-type="Meccan"]    { color: var(--warn); border-color: var(--warn); background: transparent; }
+.surah-rev-type[data-type="Medinan"]  { color: var(--success); border-color: var(--success); background: transparent; }
+
+.surah-name {
+  font-family: var(--font-arabic);
+  font-size: var(--fs-xl);
+  color: var(--text);
+  direction: rtl;
+}
+.surah-latin { font-size: var(--fs-sm); color: var(--text-muted); }
+.surah-translation { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+.surah-count { font-size: var(--fs-sm); color: var(--text-faint); margin-top: auto; padding-top: var(--sp-2); }
+
+/* ── 9. Page: Surah ────────────────────────────────────────────── */
+.page-surah {
+  display: grid;
+  grid-template-columns: var(--ssp-width) 1fr;
+  grid-template-areas: "panel main";
+  min-height: calc(100vh - var(--gh-height));
+  align-items: start;
+}
+
+/* ── 10. Surah side panel ──────────────────────────────────────── */
+.surah-side-panel {
+  grid-area: panel;
+  position: sticky;
+  top: var(--gh-height);
+  height: calc(100vh - var(--gh-height));
+  overflow-y: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.ssp-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding-bottom: var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.ssp-header-label { font-weight: 700; font-size: var(--fs-sm); color: var(--text); }
+.ssp-header-hint { font-size: var(--fs-sm); color: var(--text-muted); }
+.ssp-close {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  margin-top: var(--sp-2);
+}
+.ssp-close:hover { background: var(--surface--bare); color: var(--text); }
+
+.ssp-inner { flex: 1; }
+
+.ssp-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-8) 0;
+  text-align: center;
+  color: var(--text-muted);
+}
+.ssp-empty-icon { font-size: 2rem; opacity: 0.4; }
+.ssp-empty-title { font-weight: 700; font-size: var(--fs-sm); }
+.ssp-empty-body { font-size: var(--fs-sm); line-height: var(--lh-snug); max-width: 220px; }
+
+.ssp-loading { font-size: var(--fs-sm); color: var(--text-muted); padding: var(--sp-4) 0; }
+
+/* Side panel content */
+.ssp-word {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.ssp-word-text { font-family: var(--font-arabic); font-size: var(--fs-xl); direction: rtl; }
+.ssp-word-ref { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+.ssp-morph-summary { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-bottom: var(--sp-4); }
+.ssp-morph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.ssp-morph-chip-count { font-size: 0.75em; opacity: 0.7; }
+
+.ssp-dl { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-3); margin-bottom: var(--sp-3); }
+.ssp-dl dt { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.ssp-dl dd { font-size: var(--fs-sm); color: var(--text); }
+
+.ssp-gloss { font-size: var(--fs-sm); color: var(--text); line-height: var(--lh-snug); margin-bottom: var(--sp-3); }
+
+.ssp-section {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-4);
+  margin-bottom: var(--sp-3);
+}
+
+.ssp-segs { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ssp-seg {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.ssp-seg-text { font-family: var(--font-arabic); direction: rtl; }
+
+.ssp-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1em 0.5em;
+  border-radius: var(--radius-sm);
+  font-size: 0.8em;
+  white-space: nowrap;
+}
+.ssp-tag--pos    { background: var(--accent-bg); color: var(--accent); }
+.ssp-tag--grammar { background: #ede9f5; color: #5b21b6; }
+.ssp-tag--decl  { background: #f0fdf4; color: var(--success); }
+
+.ssp-h4 { font-size: var(--fs-sm); font-weight: 700; margin-top: var(--sp-4); margin-bottom: var(--sp-2); color: var(--text-muted); }
+
+.ssp-examples, .ssp-hadith { list-style: none; display: flex; flex-direction: column; gap: var(--sp-3); }
+.ssp-example, .ssp-hadith-item {
+  background: var(--surface--bare);
+  border-radius: var(--radius);
+  padding: var(--sp-3);
+}
+.ssp-example-ref { font-size: var(--fs-sm); font-weight: 700; color: var(--link); }
+.ssp-example-ar { font-family: var(--font-arabic); direction: rtl; margin-top: var(--sp-1); font-size: var(--fs-sm); }
+.ssp-example-en, .ssp-example-ctx { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+.ssp-hadith-ar { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-sm); }
+.ssp-hadith-en { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+.ssp-hadith-src { font-size: var(--fs-sm); color: var(--text-faint); margin-top: var(--sp-1); font-style: italic; }
+
+.ssp-meaning-en, .ssp-meaning-ar, .ssp-meaning-core { font-size: var(--fs-sm); margin-bottom: var(--sp-3); line-height: var(--lh-snug); }
+.ssp-meaning-ar { font-family: var(--font-arabic); direction: rtl; }
+.ssp-lex { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-2); }
+
+.ssp-link {
+  display: inline-block;
+  margin-top: var(--sp-4);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--link);
+}
+.ssp-link:hover { color: var(--link-hover); }
+
+/* ── 11. Surah main content ────────────────────────────────────── */
+.surah-main {
+  grid-area: main;
+  padding: var(--sp-6) var(--sp-8);
+  min-width: 0;
+}
+
+/* ── 12. Surah header ──────────────────────────────────────────── */
+.surah-header {
+  position: sticky;
+  top: var(--gh-height);
+  z-index: var(--z-sticky);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-4) var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  margin: 0 calc(-1 * var(--sp-8));
+  padding-left: var(--sp-8);
+  padding-right: var(--sp-8);
+}
+
+.sh-row { display: flex; align-items: center; gap: var(--sp-4); }
+.sh-nav-row { justify-content: space-between; }
+
+.surah-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+}
+.surah-title-num { color: var(--text-muted); font-size: var(--fs-sm); font-weight: 600; }
+.surah-title-name { font-family: var(--font-arabic); direction: rtl; }
+
+.sh-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  align-items: center;
+}
+.sh-meta-rev {
+  font-size: 0.75em;
+  font-weight: 700;
+  padding: 0.15em 0.5em;
+  border-radius: var(--radius-sm);
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  color: var(--text-faint);
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.sh-meta-rev[data-type="Meccan"]  { color: var(--warn); border-color: var(--warn); background: transparent; }
+.sh-meta-rev[data-type="Medinan"]{ color: var(--success); border-color: var(--success); background: transparent; }
+
+.sh-prev, .sh-next {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s, background 0.15s;
+}
+.sh-prev:hover, .sh-next:hover { color: var(--accent); background: var(--accent-bg); text-decoration: none; }
+.sh-prev.disabled, .sh-next.disabled { opacity: 0.35; pointer-events: none; }
+
+.sh-ctrl-row {
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+.sh-search { flex: 1; min-width: 160px; }
+.sh-search input {
+  width: 100%;
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.sh-search input:focus { border-color: var(--accent); }
+.sh-search input.is-error { border-color: #dc2626; background: #fef2f2; }
+
+.sh-control { display: flex; align-items: center; gap: var(--sp-2); }
+.sh-label { font-size: var(--fs-sm); color: var(--text-muted); white-space: nowrap; }
+.sh-value { font-size: var(--fs-sm); color: var(--text-muted); min-width: 2.5em; }
+
+/* Range inputs (font size + line height) */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  outline: none;
+  width: 100px;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--surface);
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--surface);
+}
+
+/* Translation select */
+.translation-select {
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+.translation-select:focus { border-color: var(--accent); }
+
+/* Surah search footer */
+#surah-search-footer {
+  position: fixed;
+  bottom: var(--sp-6);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-overlay);
+  background: var(--text);
+  color: var(--bg);
+  border-radius: 999px;
+  padding: var(--sp-2) var(--sp-4);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  font-size: var(--fs-sm);
+  box-shadow: 0 4px 20px rgba(0,0,0,.25);
+  white-space: nowrap;
+}
+.ssf-info { font-weight: 600; }
+.ssf-prev, .ssf-next, .ssf-close {
+  background: rgba(255,255,255,0.15);
+  border: none;
+  color: inherit;
+  border-radius: 50%;
+  width: 1.75rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  transition: background 0.15s;
+}
+.ssf-prev:hover, .ssf-next:hover, .ssf-close:hover { background: rgba(255,255,255,0.3); }
+
+/* Continue reading banner */
+.continue-reading {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-6);
+  margin-bottom: var(--sp-6);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--sp-4);
+}
+.continue-reading a { font-weight: 600; color: var(--accent); font-size: var(--fs-sm); }
+.continue-reading button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.continue-reading button:hover { background: rgba(0,0,0,.06); }
+
+/* ── 13. Quran text ─────────────────────────────────────────────── */
+.bismillah {
+  font-family: var(--font-arabic);
+  font-size: calc(var(--fs-quran) * 1.2);
+  line-height: calc(var(--lh-quran) * 1.1);
+  text-align: center;
+  color: var(--accent);
+  padding: var(--sp-8) 0;
+  direction: rtl;
+  font-weight: 700;
+}
+
+.quran {
+  font-family: var(--font-arabic);
+  font-size: var(--fs-quran);
+  line-height: var(--lh-quran);
+  text-align: justify;
+  text-justify: inter-word;
+  hyphens: none;
+  word-spacing: 0.05em;
+  direction: rtl;
+}
+
+/* ── 14. Ayah ───────────────────────────────────────────────────── */
+.ayah {
+  margin: var(--sp-6) 0;
+  scroll-margin-top: calc(var(--gh-height) + 8rem);
+  position: relative;
+}
+
+.ayah-text {
+  margin: 0;
+  padding: 0;
+}
+
+/* Highlighted ayah (from verse-scroll or local search) */
+.ayah.ayah-focus {
+  background: var(--ayah-focus-bg);
+  border-radius: var(--radius);
+  transition: background 0.3s;
+}
+
+/* Word cluster — non-breaking unit per word + trailing marks */
+.word-cluster {
+  display: inline-block;
+  white-space: nowrap;
+  position: relative;
+}
+
+/* Word button inside ayah text */
+.word {
+  display: inline-block;
+  background: none;
+  border: none;
+  font: inherit;
+  font-family: var(--font-arabic);
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  direction: rtl;
+  padding: 0 var(---sp-1, 0.05em);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  white-space: nowrap;
+  position: relative;
+}
+.word:hover {
+  background: var(--word-hover-bg);
+  color: var(--accent);
+}
+.word[data-loading="true"] { opacity: 0.7; }
+
+/* Marks (pause, sajdah, rub') — trailing marks on a word cluster */
+.mark {
+  display: inline-block;
+  padding: 0 0.05em;
+  user-select: none;
+  white-space: nowrap;
+}
+.mark[data-char="۞"]  { color: var(--mark-rub); }
+.mark[data-char="۩"]  { color: var(--mark-sajdah); }
+.mark-trail { padding: 0; }
+
+/* Verse number SVG */
+.ayah-number-link {
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-start: 0.1em;
+  line-height: 0;
+  text-decoration: none;
+}
+.ayah-number-link:hover { opacity: 0.8; text-decoration: none; }
+
+.ayah-number { display: inline-block; }
+.ayah-number-text { fill: var(--text); font-family: var(--font-sans); font-size: 0.55em; font-weight: 700; }
+.ayah-number-fill { fill: var(--accent); }
+.ayah-number-ring { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: 0.4; }
+.ayah-number-bg { fill: none; opacity: 0; } /* decorative star path, hidden */
+
+/* Ayah bookmark button */
+.ayah-bookmark {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: none;
+  border: none;
+  color: var(--text-faint);
+  font-size: var(--fs-base);
+  cursor: pointer;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  transition: color 0.15s, transform 0.1s;
+  line-height: 1;
+}
+.ayah-bookmark:hover { color: var(--accent); transform: scale(1.15); }
+.ayah-bookmark[aria-pressed="true"] { color: var(--accent); }
+
+/* Verse search highlight */
+.ayahmark { background: var(--ayah-focus-bg); border-radius: var(--radius-sm); }
+
+/* Translations */
+.ayah-translations { margin-top: var(--sp-3); }
+.ayah-translation {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text-muted);
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border);
+  direction: ltr;
+  text-align: left;
+}
+.ayah-translation[dir="rtl"] { direction: rtl; text-align: right; font-family: var(--font-arabic); }
+
+/* ── 15. Word tooltip ───────────────────────────────────────────── */
+#word-tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4);
+  width: 280px;
+  max-width: 90vw;
+  box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  pointer-events: none;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-snug);
+  color: var(--text);
+}
+
+#word-tooltip[hidden] { display: none; }
+
+.wt-word {
+  font-family: var(--font-arabic);
+  font-size: var(--fs-xl);
+  direction: rtl;
+  margin-bottom: var(--sp-2);
+  color: var(--text);
+}
+.wt-root-line {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  margin-bottom: var(--sp-2);
+}
+.wt-root-ar { font-family: var(--font-arabic); direction: rtl; color: var(--accent); font-weight: 700; }
+.wt-root-bw { color: var(--text-muted); font-size: var(--fs-sm); }
+.wt-lemma { font-family: var(--font-arabic); direction: rtl; color: var(--text); margin-bottom: var(--sp-2); }
+.wt-sep { border: none; border-top: 1px solid var(--border); margin: var(--sp-3) 0; }
+.wt-gloss { color: var(--text); }
+.wt-tag {
+  display: inline-block;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.1em 0.6em;
+  font-size: 0.85em;
+  margin-right: var(--sp-1);
+  margin-bottom: var(--sp-1);
+}
+.wt-fields { display: grid; grid-template-columns: auto 1fr; gap: var(--sp-1) var(--sp-3); }
+.wt-fields dt { color: var(--text-muted); font-size: var(--fs-sm); }
+.wt-fields dd { font-size: var(--fs-sm); }
+.wt-gram { color: var(--text-muted); }
+.wt-gram-tags { color: var(--text-faint); font-size: 0.9em; }
+.wt-loading, .wt-empty { color: var(--text-muted); font-style: italic; }
+
+/* ── 16. Page: Roots list ───────────────────────────────────────── */
+.page-roots { max-width: 900px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+
+.roots-list {
+  list-style: none;
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.root-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  transition: border-color 0.15s;
+}
+.root-row:hover { border-color: var(--accent); }
+
+.root-link {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-3) var(--sp-4);
+  text-decoration: none;
+  color: var(--text);
+  gap: var(--sp-4);
+}
+.root-link:hover { text-decoration: none; }
+.root-buckwalter { font-family: var(--font-arabic); font-size: var(--fs-lg); direction: rtl; font-weight: 700; }
+.root-count { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.root-title { padding: 0 var(--sp-4) var(--sp-3); font-size: var(--fs-sm); color: var(--text-muted); }
+
+/* Pagination */
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-8) 0;
+  font-size: var(--fs-sm);
+}
+.page-prev, .page-next {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.page-prev:hover, .page-next:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+.page-info { color: var(--text-muted); }
+
+/* Filter form */
+.cluster label { font-size: var(--fs-sm); color: var(--text-muted); }
+.cluster select {
+  background: var(--surface--bare);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  outline: none;
+}
+.cluster select:focus { border-color: var(--accent); }
+.filter-apply {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: var(--sp-2) var(--sp-4);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.filter-apply:hover { opacity: 0.85; }
+
+/* ── 17. Page: Root detail ──────────────────────────────────────── */
+.page-root-detail { max-width: 1100px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+
+.root-detail-header { margin-bottom: var(--sp-8); }
+.rdh-arabic { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-3xl); font-weight: 700; }
+.rdh-buckwalter { font-size: var(--fs-base); color: var(--text-muted); font-weight: 400; }
+.rdh-count { font-size: var(--fs-sm); color: var(--text-muted); font-weight: 400; display: block; margin-top: var(--sp-1); }
+.rdh-letters { font-family: var(--font-arabic); direction: rtl; margin-top: var(--sp-2); font-size: var(--fs-lg); }
+.rdh-pos { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-2); }
+
+/* Tables */
+.rd-morph-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+.rd-morph-table th, .rd-morph-table td {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.rd-morph-table th { font-weight: 700; color: var(--text-muted); font-size: var(--fs-sm); }
+.rd-morph-num { text-align: right; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.rd-morph-tag {
+  display: inline-block;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: var(--radius-sm);
+  padding: 0.1em 0.5em;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.meaning-en, .meaning-ar, .meaning-core { line-height: var(--lh-snug); }
+.meaning-ar { font-family: var(--font-arabic); direction: rtl; }
+.lex-ref { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-2); }
+
+/* Distribution list */
+.rd-dist-summary { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-4); }
+.rd-dist-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.rd-dist-row { display: flex; justify-content: space-between; align-items: center; padding: var(--sp-1) 0; border-bottom: 1px solid var(--border); }
+.rd-dist-link { font-size: var(--fs-sm); color: var(--link); }
+.rd-dist-count { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* Occurrences */
+.rd-occ-divider { border: none; border-top: 2px solid var(--border); margin: var(--sp-8) 0; }
+.rd-occ-summary { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-4); }
+.rd-occ-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-4); }
+.rd-occ-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-4) var(--sp-6);
+}
+.rd-occ-header { display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-4); margin-bottom: var(--sp-3); }
+.rd-occ-link { font-weight: 700; font-size: var(--fs-sm); color: var(--link); }
+.rd-occ-word { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-lg); }
+.rd-occ-morph { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-bottom: var(--sp-3); }
+.rd-morph-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2em;
+  background: var(--accent-bg);
+  color: var(--accent);
+  border-radius: 999px;
+  padding: 0.15em 0.6em;
+  font-size: var(--fs-sm);
+}
+.rd-morph-chip-tag { font-weight: 600; }
+.rd-morph-chip-sep { opacity: 0.5; }
+.rd-morph-chip-type, .rd-morph-chip-role, .rd-morph-chip-case { font-size: 0.85em; opacity: 0.8; }
+.rd-occ-gloss { font-size: var(--fs-sm); color: var(--text-muted); margin-left: var(--sp-3); }
+.rd-occ-verse { font-family: var(--font-arabic); direction: rtl; margin-top: var(--sp-2); font-size: var(--fs-sm); }
+.rd-occ-no-morph { font-size: var(--fs-sm); color: var(--text-faint); font-style: italic; }
+
+.rd-locations { margin-top: var(--sp-4); }
+.rd-locations summary { font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; padding: var(--sp-2) 0; }
+.rd-loc-list { list-style: none; display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-top: var(--sp-3); }
+.rd-loc-list li a { font-size: var(--fs-sm); color: var(--link); }
+
+/* Quran examples */
+.rd-ex-ref { font-size: var(--fs-sm); font-weight: 700; color: var(--link); }
+.rd-ex-arabic { font-family: var(--font-arabic); direction: rtl; margin-top: var(--sp-1); font-size: var(--fs-sm); }
+.rd-ex-english, .rd-ex-context { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+
+/* Hadith */
+.rd-hadith-arabic { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-sm); }
+.rd-hadith-english, .rd-hadith-source { font-size: var(--fs-sm); color: var(--text-muted); margin-top: var(--sp-1); }
+
+/* Lemma occurrences */
+.rd-lemma-head { display: flex; justify-content: space-between; align-items: baseline; }
+.rd-lemma-arabic { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-lg); }
+.rd-lemma-count { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.rd-lo-row { padding: var(--sp-2) 0; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: auto 1fr; gap: var(--sp-3); align-items: baseline; }
+.rd-lo-link { font-size: var(--fs-sm); font-weight: 600; color: var(--link); white-space: nowrap; }
+.rd-lo-verse { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-sm); }
+.rd-lo-trans { font-size: var(--fs-sm); color: var(--text-muted); grid-column: 2; }
+
+/* ── 18. Page: Concordance ──────────────────────────────────────── */
+.page-concordance { max-width: 900px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+.concordance-list { list-style: none; display: flex; flex-direction: column; gap: var(--sp-4); }
+.concordance-root {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--sp-5) var(--sp-6);
+}
+.cr-buckwalter {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--sp-3);
+}
+.cr-buckwalter a { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-xl); font-weight: 700; color: var(--text); }
+.cr-buckwalter a:hover { color: var(--accent); text-decoration: none; }
+.cr-buckwalter small { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+.cr-lemmas { list-style: none; display: flex; flex-direction: column; gap: var(--sp-2); }
+.cr-lemma { display: flex; align-items: baseline; gap: var(--sp-3); padding: var(--sp-2) 0; border-bottom: 1px solid var(--border); }
+.crl-arabic { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-base); flex: 1; }
+.crl-count { font-size: var(--fs-sm); color: var(--text-muted); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.crl-verses { margin-top: var(--sp-2); }
+.crl-verses summary { font-size: var(--fs-sm); color: var(--text-muted); cursor: pointer; }
+.crl-more { font-size: var(--fs-sm); color: var(--text-faint); }
+.crl-verse-list { list-style: none; margin-top: var(--sp-2); padding-left: var(--sp-4); display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.crl-verse-list li a { font-size: var(--fs-sm); color: var(--link); }
+
+/* ── 19. Page: Search ──────────────────────────────────────────── */
+.page-search { max-width: 900px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+.search-results {
+  list-style: none;
+  margin-top: var(--sp-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.search-result {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--sp-4) var(--sp-5);
+  transition: border-color 0.15s;
+}
+.search-result:hover { border-color: var(--accent); }
+.search-link { font-weight: 700; font-size: var(--fs-base); color: var(--link); display: block; margin-bottom: var(--sp-2); }
+.search-verse { font-family: var(--font-arabic); direction: rtl; font-size: var(--fs-base); margin-bottom: var(--sp-2); }
+.search-snippet { font-size: var(--fs-sm); color: var(--text-muted); }
+.search-root { font-size: var(--fs-sm); color: var(--text-muted); }
+.search-root a { color: var(--link); }
+
+.search-empty {
+  text-align: center;
+  padding: var(--sp-12) 0;
+}
+.search-empty h2 { margin-bottom: var(--sp-4); }
+.search-empty p { color: var(--text-muted); margin-bottom: var(--sp-6); }
+.search-empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-3); }
+.search-empty-action {
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.search-empty-action:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* ── 20. Page: Font metadata ────────────────────────────────────── */
+.page-fontmeta { max-width: 1100px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+
+.fontmeta-toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--sp-8);
+}
+.fontmeta-toc a {
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--surface--bare);
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: background 0.15s, color 0.15s;
+}
+.fontmeta-toc a:hover { background: var(--accent-bg); color: var(--accent); text-decoration: none; }
+
+.fontmeta-section { margin-bottom: var(--sp-12); scroll-margin-top: calc(var(--gh-height) + var(--sp-4)); }
+.fontmeta-section-note { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-6); }
+
+.fontmeta-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: var(--sp-3); margin-bottom: var(--sp-4); }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: var(--sp-4); }
+.stat dt { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-1); }
+.stat dd { font-size: var(--fs-xl); font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.stat.warn dd { color: var(--warn); }
+.stat.ok dd { color: var(--success); }
+.fontmeta-note { font-size: var(--fs-sm); color: var(--text-muted); }
+
+.fontmeta-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.fontmeta-table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); white-space: nowrap; }
+.fontmeta-table thead { position: sticky; top: var(--gh-height); background: var(--surface); z-index: 1; }
+.fontmeta-table th, .fontmeta-table td { padding: var(--sp-2) var(--sp-3); border-bottom: 1px solid var(--border); text-align: left; }
+.fontmeta-table th { font-weight: 700; font-size: var(--fs-sm); color: var(--text-muted); background: var(--surface); }
+.fontmeta-table tbody tr:last-child td { border-bottom: none; }
+.fontmeta-table tbody tr:hover { background: var(--surface--bare); }
+
+.col-cp      { width: 80px; }
+.col-name    { min-width: 120px; }
+.col-count   { width: 70px; text-align: right; }
+.col-render  { width: 60px; text-align: center; font-size: 1.4em; }
+.col-glyphname { min-width: 120px; }
+.col-only    { width: 100px; }
+
+.name-truncate {
+  display: inline-block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.7em;
+  font-weight: 700;
+  padding: 0.1em 0.4em;
+  border-radius: var(--radius-sm);
+  margin-left: var(--sp-1);
+  vertical-align: middle;
+}
+.miss-hafs, .miss-amiri { background: #fef2f2; color: #dc2626; }
+.in-hafs  { background: #f0fdf4; color: var(--success); }
+.in-amiri { background: #ede9f5; color: #5b21b6; }
+
+.render-glyph { font-size: 1.4em; line-height: 1; display: block; }
+
+.fontmeta-table--diff .diff-row { background: #fffbeb; }
+.fontmeta-table--glyphs tbody tr.in-quran { background: #f0fdf4; }
+.fontmeta-table--glyphs tbody tr.in-quran:hover { background: #dcfce7; }
+
+/* ── 21. Page: About ────────────────────────────────────────────── */
+.page-about { max-width: 680px; margin: 0 auto; padding: var(--sp-8) var(--sp-6); }
+.page-about dl { margin-bottom: var(--sp-6); }
+.page-about dt { font-weight: 700; margin-top: var(--sp-4); margin-bottom: var(--sp-1); color: var(--text); }
+.page-about dd { color: var(--text-muted); font-size: var(--fs-sm); margin-left: 0; }
+.page-about ul { padding-left: var(--sp-6); margin-bottom: var(--sp-4); }
+.page-about li { font-size: var(--fs-sm); color: var(--text-muted); margin-bottom: var(--sp-1); }
+.layout-footer { font-size: var(--fs-sm); color: var(--text-faint); text-align: center; margin-top: var(--sp-12); }
+
+/* ── 22. Page: Error ────────────────────────────────────────────── */
+.error-page {
+  max-width: 520px;
+  margin: var(--sp-12) auto;
+  text-align: center;
+  padding: var(--sp-8) var(--sp-10);
+}
+.error-status { font-size: 4rem; font-weight: 800; color: var(--border-strong); line-height: 1; margin-bottom: var(--sp-4); }
+.error-page h1 { margin-bottom: var(--sp-4); }
+.error-msg { color: var(--text-muted); font-size: var(--fs-sm); margin-bottom: var(--sp-6); }
+.error-path { margin-bottom: var(--sp-6); }
+.error-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: var(--sp-3); }
+.error-action {
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.error-action:hover { border-color: var(--accent); color: var(--accent); text-decoration: none; }
+
+/* ── 23. Print ─────────────────────────────────────────────────── */
+@media print {
+  .global-header,
+  .surah-side-panel,
+  .surah-header,
+  .ayah-bookmark,
+  #word-tooltip,
+  .continue-reading,
+  .gh-bookmarks-drawer,
+  .gh-nav-drawer { display: none !important; }
+  .page { padding-top: 0; }
+  .ayah { break-inside: avoid; }
+  .quran { font-size: 12pt; }
+  .ayah-translations { display: none; }
+}
+
+/* ── 24. Mobile ─────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  /* Global header */
+  .gh-nav { display: none; }
+  .gh-hamburger { display: flex; }
+  .gh-actions-mobile { display: flex; align-items: center; gap: var(--sp-1); margin-left: auto; }
+
+  /* Surah page: panel becomes bottom sheet */
+  .page-surah {
+    grid-template-columns: 1fr;
+    grid-template-areas: "main";
+  }
+  .surah-side-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    height: 60vh;
+    width: 100%;
+    border-right: none;
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    z-index: var(--z-modal);
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.1);
+  }
+  .surah-side-panel.is-open { transform: translateY(0); }
+
+  .surah-main { padding: var(--sp-4); }
+  .surah-header { margin: 0 calc(-1 * var(--sp-4)); padding-left: var(--sp-4); padding-right: var(--sp-4); }
+
+  /* Surah grid */
+  .surah-grid { grid-template-columns: 1fr; }
+
+  /* Root detail two-col collapses */
+  .layout-shell--two-col { grid-template-columns: 1fr; }
+  .layout-aside--sticky { position: static; }
+
+  /* Font meta tables */
+  .fontmeta-section { scroll-margin-top: calc(var(--gh-height) + var(--sp-4)); }
+
+  /* Wide tables */
+  .fontmeta-table { font-size: 0.8rem; }
+  .col-name { min-width: 80px; }
+}
+
+@media (max-width: 600px) {
+  :root { --fs-quran: 1.125rem; }
+  .bismillah { font-size: calc(var(--fs-quran) * 1.1); }
+  .home-stats { gap: var(--sp-2); }
+  .home-stat { min-width: 80px; padding: var(--sp-4); }
+  .surah-header { padding: var(--sp-3) var(--sp-4); }
+  .sh-ctrl-row { gap: var(--sp-3); }
+  .rd-occ-header { flex-direction: column; gap: var(--sp-1); }
+  .rd-occ-word { font-size: var(--fs-base); }
+}

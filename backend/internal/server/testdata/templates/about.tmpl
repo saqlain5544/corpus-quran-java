@@ -1,0 +1,74 @@
+{{define "about.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-about measure-base">
+  <header class="layout-header">
+    <h1>About</h1>
+    <p class="layout-header-meta">
+      This is a personal-project Quran reader — vanilla code, no frameworks,
+      designed for close reading and morphological exploration.
+    </p>
+  </header>
+
+  <section class="surface stack">
+    <h2>Data sources</h2>
+    <p>Three trusted sources power the application:</p>
+    <dl>
+      <dt>Quran text (Uthmani)</dt>
+      <dd>Tanzil.net Uthmani v1.1, CC-BY-3.0. <a href="https://tanzil.net" rel="noopener">tanzil.net</a></dd>
+
+      <dt>Morphological segmentation</dt>
+      <dd>MASAQ (Morphological Analysis of the Standard Arabic Quran). Available at
+        <code>data/morphology/MASAQ.csv</code>.</dd>
+
+      <dt>Arabic font</dt>
+      <dd>Hafs Uthmani font (<code>hafs.woff2</code>) with AmiriQuran as a
+        fallback for six Quranic marks where Hafs's OpenType mark anchors are
+        incomplete. See <a href="/meta/fonts">/meta/fonts</a> for the full
+        glyph matrix.</dd>
+    </dl>
+  </section>
+
+  <section class="surface stack">
+    <h2>Supplementary data</h2>
+    <dl>
+      <dt>Root meanings</dt>
+      <dd>AI-generated per-root summaries stored in
+        <code>meanings-roots-ai.jsonl</code>. Provided as a study aid only — not a
+        replacement for classical tafsir.</dd>
+
+      <dt>Concordance</dt>
+      <dd>Derived from root data, listing every occurrence of every root across
+        the Quran. Available at <a href="/concordance">/concordance</a>.</dd>
+    </dl>
+  </section>
+
+  <section class="surface stack">
+    <h2>Architecture</h2>
+    <p>Written in Go (vanilla stdlib) and vanilla JS/CSS/HTML. No external frontend
+      frameworks. Data is preprocessed once into a SQLite database and loaded at
+      startup. The word-analysis panel renders full HTML per click — no UI framework
+      abstraction.</p>
+    <p>Memory budget: the entire Quran text plus morphology and roots fits well under 80 MB
+      RSS in-process — no streaming, no DOM trees for the dataset.</p>
+  </section>
+
+  <section class="surface stack">
+    <h2>Tools</h2>
+    <ul>
+      <li><a href="/meta/fonts">/meta/fonts</a> — visual reference for every codepoint in the
+        Quran text and every glyph in Hafs and AmiriQuran</li>
+      <li><a href="/concordance">/concordance</a> — root × surah × verse matrix</li>
+      <li><a href="/roots">/roots</a> — alphabetical list of roots with frequency</li>
+    </ul>
+  </section>
+
+  <section class="surface stack">
+    <h2>License</h2>
+    <p>Quran text: &copy; Tanzil Project, used under CC-BY-3.0. See
+      <a href="https://tanzil.net" rel="noopener">tanzil.net</a> for terms.</p>
+    <p>Application code: see <a href="https://github.com/">repository</a> for license.</p>
+  </section>
+
+  <p class="layout-footer">© {{year}} Quran Reader.</p>
+</div>
+{{end}}

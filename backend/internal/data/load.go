@@ -1,0 +1,764 @@
+package data
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+
+	_ "github.com/mattn/go-sqlite3"
+
+	"quranreader/backend/internal/search/bktree"
+	"quranreader/loc"
+	"quranreader/token"
+	"quranreader/types"
+)
+
+// enTokenRe mirrors search.EnTokenize's regex — matches runs of
+// ASCII letters with optional internal apostrophe. Kept here to
+// avoid an import cycle (search imports data).
+var enTokenRe = regexp.MustCompile(`[A-Za-z]+(?:'[A-Za-z]+)?`)
+
+func enTokenizeLocal(s string) []string {
+	return enTokenRe.FindAllString(strings.ToLower(s), -1)
+}
+
+// arabicPairLocal is a (locKey, normalized Arabic text) tuple
+// captured during the segment scan. Package-level so buildArabicInvertedIndex
+// can take a slice of these as a parameter.
+type arabicPairLocal struct {
+	key    uint64
+	normed string
+}
+
+// LoadAll opens the detailed-quran.db SQLite database and constructs
+// the in-memory Quran, MasaqIndex, RootsIndex, and Meta. All data is
+// read from a single file — no preprocessing pipeline is needed.
+//
+// Args:
+//
+//	dbPath — path to detailed-quran.db
+//
+// The three sub-loaders (Quran, MASAQ, roots) are independent — they
+// each query different tables and write to disjoint result structs —
+// so we run them concurrently. Each opens its own sqlite3 read-only
+// connection from the pool, which is safe (SQLite is read-only here
+// and the connections don't share state). On a modern SSD this drops
+// total load time by ~40% versus sequential reads.
+func LoadAll(dbPath string) (*types.Quran, *types.MasaqIndex, *types.RootsIndex, *types.Meta, *Concordance, error) {
+	// One shared *sql.DB so the loaders share a connection pool.
+	db, err := sql.Open("sqlite3", dbPath+"?mode=ro")
+	if err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("open db: %w", err)
+	}
+	defer db.Close()
+
+	type qResult struct {
+		q   *types.Quran
+		err error
+	}
+	type mResult struct {
+		m   *types.MasaqIndex
+		err error
+	}
+	type rResult struct {
+		r   *types.RootsIndex
+		err error
+	}
+	type cResult struct {
+		c   *Concordance
+		err error
+	}
+
+	// Use Go 1.25's WaitGroup.Go() — cleaner than the manual
+	// Add(1) / defer Done() dance. The buffers of size 1 ensure
+	// each goroutine can exit immediately after writing its result,
+	// even if the receiver hasn't read yet.
+	qCh := make(chan qResult, 1)
+	mCh := make(chan mResult, 1)
+	rCh := make(chan rResult, 1)
+	cCh := make(chan cResult, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		q, e := loadQuranFromDB(db)
+		qCh <- qResult{q, e}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		m, e := loadMasaqFromDB(db)
+		mCh <- mResult{m, e}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r, e := loadRootsFromDB(db)
+		rCh <- rResult{r, e}
+	}()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		c, e := LoadConcordanceFromDB(db)
+		cCh <- cResult{c, e}
+	}()
+	wg.Wait()
+	close(qCh)
+	close(mCh)
+	close(rCh)
+	close(cCh)
+
+	qr := <-qCh
+	if qr.err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("quran: %w", qr.err)
+	}
+	mr := <-mCh
+	if mr.err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("masaq: %w", mr.err)
+	}
+	rr := <-rCh
+	if rr.err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("roots: %w", rr.err)
+	}
+	cr := <-cCh
+	if cr.err != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("concordance: %w", cr.err)
+	}
+
+	// Reconcile word-boundary disagreements between the Quran XML
+	// tokenizer and MASAQ's morphological segmentation.  ~23 words
+	// (0.03%) are split in the XML but merged into a single MASAQ
+	// position; we copy the merged word's segments to the missing
+	// position so tooltip/API lookups succeed 100% of the time.
+	reconcileMasaqBoundaries(mr.m, qr.q)
+
+	meta := qr.q.Meta
+	return qr.q, mr.m, rr.r, &meta, cr.c, nil
+}
+
+// loadQuranFromDB reads surahs and verses, tokenizes each verse,
+// and builds the Quran struct with proper Bismillah handling.
+func loadQuranFromDB(db *sql.DB) (*types.Quran, error) {
+	// Surah names. We pull every column the `surahs` table exposes —
+	// even ones the current UI doesn't render — so the in-memory
+	// struct is the single source of truth and adding a new field to
+	// the schema never silently drops data.
+	rows, err := db.Query(`SELECT id, name, english_name, english_translation, revelation_type
+	                       FROM surahs ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	q := &types.Quran{
+		Surahs: make(map[int]*types.Surah, 114),
+		Meta: types.Meta{
+			SurahNames: make([]string, 114),
+			AyahCounts: make([]int, 114),
+		},
+	}
+
+	for rows.Next() {
+		var id int
+		var name, nameLatin, engTrans, revType string
+		// english_name and english_translation and revelation_type
+		// are nullable in the DB schema (some rows may be empty).
+		// Use sql.NullString to scan them safely.
+		var (
+			nl  sql.NullString
+			etr sql.NullString
+			rt  sql.NullString
+		)
+		if err := rows.Scan(&id, &name, &nl, &etr, &rt); err != nil {
+			return nil, err
+		}
+		if id < 1 || id > 114 {
+			continue
+		}
+		if nl.Valid {
+			nameLatin = nl.String
+		}
+		if etr.Valid {
+			engTrans = etr.String
+		}
+		if rt.Valid {
+			revType = rt.String
+		}
+		q.Meta.SurahNames[id-1] = name
+		q.Surahs[id] = &types.Surah{
+			Number:             id,
+			Name:               name,
+			NameLatin:          nameLatin,
+			RevelationType:     revType,
+			EnglishTranslation: engTrans,
+			Ayahs:              make(map[int]*types.Ayah),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Verses — ordered by surah then verse number so we build sequentially.
+	vrows, err := db.Query("SELECT surah_id, verse_number, text_uthmani FROM verses ORDER BY surah_id, verse_number")
+	if err != nil {
+		return nil, err
+	}
+	defer vrows.Close()
+
+	for vrows.Next() {
+		var sid, vn int
+		var text string
+		if err := vrows.Scan(&sid, &vn, &text); err != nil {
+			return nil, err
+		}
+		s := q.Surahs[sid]
+		if s == nil {
+			continue
+		}
+		// SearchText: pre-normalized (lowercased, whitespace collapsed)
+		// visible text. Used as the local-search cache on the surah
+		// page (surah-header.js reads .dataset.searchText instead of
+		// textContent on every submit).
+		//
+		// NOTE: U+06E3 (Arabic Small Low Seen — quranic orthographic
+		// mark for the ص→س pronunciation shift in مُصَيْطِرُ) is kept
+		// as-is in the source data. hafs.woff2 maps U+06E3 → glyph
+		// 105 with valid outline, so the data is correct. Any render
+		// issue at this character is a browser/shaper/font-fallback
+		// concern, not a data one.
+		searchText := strings.ToLower(strings.Join(strings.Fields(text), " "))
+		s.Ayahs[vn] = &types.Ayah{Number: vn, Text: text, SearchText: searchText}
+	}
+	if err := vrows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Bismillah handling:
+	//   Surah 1: verse 1 IS the Bismillah.
+	//   Surah 9: no Bismillah.
+	//   All other surahs: use the canonical Bismillah text.
+	{
+		// Surah 1 verse 1 is the Bismillah.
+		if s1 := q.Surahs[1]; s1 != nil {
+			if a1, ok := s1.Ayahs[1]; ok {
+				s1.Bismillah = a1.Text
+			}
+		}
+		// Surahs 2..114 except 9: canonical Bismillah.
+		for n := 2; n <= 114; n++ {
+			if n == 9 {
+				continue
+			}
+			if s := q.Surahs[n]; s != nil {
+				s.Bismillah = token.BISMILLAH_TEXT
+			}
+		}
+	}
+
+	// Tokenize each ayah + count words.
+	for n := 1; n <= 114; n++ {
+		s := q.Surahs[n]
+		if s == nil {
+			return nil, fmt.Errorf("missing surah %d", n)
+		}
+		q.Meta.AyahCounts[n-1] = len(s.Ayahs)
+		q.Meta.AyahCount += len(s.Ayahs)
+		for _, ay := range s.Ayahs {
+			ay.Tokens = token.Tokenize(ay.Text)
+			for _, t := range ay.Tokens {
+				if t.Kind == "word" {
+					q.Meta.WordCount++
+				}
+			}
+		}
+	}
+
+	return q, nil
+}
+
+// loadMasaqFromDB reads words and segments and builds a MasaqIndex
+// keyed by loc.Key(surah, ayah, word).
+func loadMasaqFromDB(db *sql.DB) (*types.MasaqIndex, error) {
+	idx := &types.MasaqIndex{
+		ByWord: make(map[uint64][]types.MasaqSegment, 80000),
+	}
+
+	// Join words + segments so we get the full picture per segment.
+	// The word table provides surah/ayah/word positions and the full
+	// token form; the segments table provides morphological detail.
+	// Note: WithoutDiacritics comes from `s.without_diacritics` (the
+	// segment), not `w.without_diacritics` (the whole word). For
+	// most words the word-level without-diacritics is the same as
+	// the concatenation of segment-level ones, but they diverge on
+	// prefixed words (e.g., لِلَّهِ = لِ + لَّهِ → word-level = "لله"
+	// but each segment has its own without-diacritics form: "ل" and "له").
+	rows, err := db.Query(`
+		SELECT v.surah_id, v.verse_number, w.word_number,
+		       w.token_imla_i, w.translation,
+		       s.segment_number, s.text, s.without_diacritics,
+		       s.morph_tag, s.morph_type,
+		       s.syntactic_role, s.case_mood, s.case_mood_marker,
+		       s.invariable_declinable, s.possessive_construct,
+		       s.phrase, s.phrasal_function, s.gloss,
+		       s.id
+		FROM words w
+		JOIN verses v ON w.verse_id = v.id
+		JOIN segments s ON s.word_id = w.id
+		ORDER BY v.surah_id, v.verse_number, w.word_number, s.segment_number
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Segment text pairs captured during the main loop, used to
+	// build the Arabic-form inverted index at the end. We collect
+	// (locKey, normalizedSegmentText) so the index covers BOTH the
+	// segment-level morphemes (e.g. 'ل', 'رحمن') AND the word-level
+	// imla form. Per-segment indexing is what the previous Arabic
+	// search did implicitly (it iterated every segment of every
+	// word), so mirroring it preserves the match behaviour.
+	var arabicSegs []arabicPairLocal
+
+	for rows.Next() {
+		var (
+			surah, ayah, wordNo, segNo        int
+			tokenImalai                       string
+			translation                       string
+			segText, withoutDiac              string
+			morphTag, morphType               string
+			synRole, caseMood, caseMoodMarker string
+			invDecl, possCons                 string
+			phrase, phrasalFn, gloss          string
+			segID                             int
+		)
+		// Column order MUST match the SELECT in the query above.
+		// WithoutDiacritics is sourced from the segment row, not the
+		// word row — see the comment on the Query for why.
+		if err := rows.Scan(
+			&surah, &ayah, &wordNo,
+			&tokenImalai, &translation,
+			&segNo, &segText, &withoutDiac,
+			&morphTag, &morphType,
+			&synRole, &caseMood, &caseMoodMarker,
+			&invDecl, &possCons,
+			&phrase, &phrasalFn, &gloss,
+			&segID,
+		); err != nil {
+			return nil, err
+		}
+		key := loc.Key(surah, ayah, wordNo)
+		// Capture segment text for the Arabic inverted index. We
+		// normalize BOTH the segment-level text and its no-diac form
+		// because the search algorithm tries both at query time.
+		// We also index the word-level imla form so whole-word
+		// matches (e.g. 'الله' matching word (1,1,2) 'اللَّهِ' whose
+		// segments are just 'ل' and 'له') work via the exact-match
+		// path.
+		if segText != "" {
+			if n := normalizeArabicLocal(segText); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
+		if withoutDiac != "" {
+			if n := normalizeArabicLocal(withoutDiac); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
+		if tokenImalai != "" {
+			if n := normalizeArabicLocal(tokenImalai); n != "" {
+				arabicSegs = append(arabicSegs, arabicPairLocal{key, n})
+			}
+		}
+		seg := types.MasaqSegment{
+			ID:                   segID,
+			SuraNo:               surah,
+			VerseNo:              ayah,
+			WordNo:               wordNo,
+			SegmentNo:            segNo,
+			Word:                 tokenImalai, // full word form from words table
+			WithoutDiacritics:    withoutDiac,
+			SegmentedWord:        segText,
+			MorphTag:             morphTag,
+			MorphType:            morphType,
+			PunctuationMark:      "", // not in DB
+			InvariableDeclinable: invDecl,
+			SyntacticRole:        synRole,
+			PossessiveConstruct:  possCons,
+			CaseMood:             caseMood,
+			CaseMoodMarker:       caseMoodMarker,
+			Phrase:               phrase,
+			PhrasalFunction:      phrasalFn,
+			Gloss:                gloss,
+			Translation:          translation,
+		}
+		idx.ByWord[key] = append(idx.ByWord[key], seg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Build inverted indexes for English / Translation search.
+	// See backend/internal/search/index for the data structure
+	// details. These are populated once at load time and used by
+	// the search package for sub-linear queries.
+	idx.ByEnTokenPostings = buildInvertedIndex(idx.ByWord, enTokenField)
+	idx.ByTranslationPostings = buildInvertedIndex(idx.ByWord, translationField)
+
+	// Pre-compute BM25 average doc length per field. O(N) once at
+	// load; saves ~10ms per query that the legacy algorithm wasted
+	// on per-request IDF + doc-length passes.
+	idx.GlossAvgDocLen = computeAvgDocLen(idx.ByWord, enTokenField)
+	idx.TranslationAvgDocLen = computeAvgDocLen(idx.ByWord, translationField)
+
+	// Build inverted index over normalized Arabic surface forms.
+	// Indexes BOTH the segment-level Word/WithoutDiacritics (so
+	// morpheme-level matches like 'ل' → 'الرحمن' work via
+	// substring) AND the word-level imla form. The Arabic search
+	// algorithm scans the vocabulary for bidirectional substring
+	// matches at query time.
+	idx.ByArabicFormPostings = buildArabicInvertedIndex(arabicSegs)
+
+	// Build Burkhard-Keller trees over the English tokens of each
+	// field. Used by the search package for sub-linear fuzzy
+	// expansion (~5K vocabulary → O(c^k · log V) per query instead
+	// of O(V) linear scan). ~30 ms to build each, ~100 KB resident.
+	idx.GlossBKTree = buildBKTree(idx.ByEnTokenPostings)
+	idx.TranslationBKTree = buildBKTree(idx.ByTranslationPostings)
+
+	return idx, nil
+}
+
+// computeAvgDocLen returns the mean |unique tokens| per doc across
+// the corpus for the given field. This is the BM25 length-normalization
+// denominator (avgdl) and is computed once at LoadAll.
+func computeAvgDocLen(byWord map[uint64][]types.MasaqSegment, field func(types.MasaqSegment) string) float64 {
+	if len(byWord) == 0 {
+		return 0
+	}
+	totalLen := 0
+	for _, segs := range byWord {
+		seen := make(map[string]struct{}, 8)
+		for _, s := range segs {
+			for _, t := range enTokenizeLocal(field(s)) {
+				seen[t] = struct{}{}
+			}
+		}
+		totalLen += len(seen)
+	}
+	return float64(totalLen) / float64(len(byWord))
+}
+
+// enTokenField returns the English gloss for the segment.
+func enTokenField(s types.MasaqSegment) string { return s.Gloss }
+
+// translationField returns the translation for the segment.
+func translationField(s types.MasaqSegment) string { return s.Translation }
+
+// buildInvertedIndex constructs the `token → []LocKey` posting list
+// for the given field of every MasaqSegment in `byWord`.
+//
+// Algorithm:
+//   - Walk every (key, segs) pair.
+//   - For each segment, extract the field text and tokenize with
+//     the same regex used by EnTokenize (defined above as enTokenRe
+//     to avoid an import cycle with the search package).
+//   - Build a per-doc dedupe set, then materialize sorted postings.
+//   - Sort each posting list so set ops are merge-walkable.
+//
+// This runs once at LoadAll. Cost is O(segments × field-length) ≈
+// 1M char ops for the 157K MASAQ segments — well under 100ms.
+func buildInvertedIndex(byWord map[uint64][]types.MasaqSegment, field func(types.MasaqSegment) string) map[string][]uint64 {
+	// First pass: collect unique tokens per doc.
+	docTokens := make(map[uint64]map[string]struct{}, len(byWord))
+	for key, segs := range byWord {
+		set, ok := docTokens[key]
+		if !ok {
+			set = make(map[string]struct{}, 8)
+			docTokens[key] = set
+		}
+		for _, s := range segs {
+			for _, tok := range enTokenizeLocal(field(s)) {
+				set[tok] = struct{}{}
+			}
+		}
+	}
+	// Second pass: materialize postings, sort for determinism.
+	postings := make(map[string][]uint64, 8000)
+	for key, set := range docTokens {
+		for t := range set {
+			postings[t] = append(postings[t], key)
+		}
+	}
+	for t := range postings {
+		lst := postings[t]
+		sort.Slice(lst, func(i, j int) bool { return lst[i] < lst[j] })
+	}
+	return postings
+}
+
+// buildBKTree constructs a Burkhard-Keller tree over the unique
+// tokens of the given field's postings. Returns nil if postings is
+// empty (caller should treat as "no fuzzy expansion").
+//
+// Insertion order matters for tree balance — we insert tokens in
+// sorted order to give a roughly balanced tree (sorted insertion
+// gives O(√n) depth on random inputs, O(n) on degenerate inputs
+// but the typical MASAQ vocabulary is well-distributed enough that
+// this works).
+func buildBKTree(postings map[string][]uint64) types.BKTreeIface {
+	if len(postings) == 0 {
+		return nil
+	}
+	tree := bktree.New()
+	// Sort for deterministic insertion order (roughly balanced).
+	tokens := make([]string, 0, len(postings))
+	for t := range postings {
+		tokens = append(tokens, t)
+	}
+	sort.Strings(tokens)
+	for _, t := range tokens {
+		tree.Insert(t, nil) // nil → use package default Levenshtein
+	}
+	return tree
+}
+
+// normalizeArabicLocal strips tashkeel AND normalizes hamza variants,
+// matching the search.NormalizeArabic + types.NormalizeArabicRoot
+// behavior. Kept here to avoid an import cycle (search imports data).
+//
+// IMPORTANT: this function MUST stay in sync with the search package's
+// NormalizeArabic and the types package's NormalizeArabicRoot —
+// otherwise the Arabic search will silently miss matches.
+func normalizeArabicLocal(s string) string {
+	if s == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		switch {
+		case r >= 0x064B && r <= 0x065F: // tashkeel
+		case r == 0x0670: // alef khanjariya → alif
+			b.WriteRune(0x0627)
+		case r == 0x0671: // alif wasla → alif (matches stripTashkeel)
+			b.WriteRune(0x0627)
+		case r == 0x0640: // tatweel — skip
+		case r == 'أ', r == 'إ', r == 'آ', r == 'ٱ':
+			b.WriteRune('ا')
+		case r == 'ى', r == 'ٰ':
+			b.WriteRune('ي')
+		case r == 'ة':
+			b.WriteRune('ه')
+		case r == 'ؤ', r == 'ئ', r == 'ء':
+			b.WriteRune('ا')
+		case r == ' ':
+			// Skip whitespace — the lookup key is whitespace-free.
+		default:
+			b.WriteRune(r)
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+// buildArabicInvertedIndex constructs the `normalized Arabic form →
+// []LocKey` posting list from the segment-text pairs captured during
+// the main load loop. Each segment contributes (key, normalized-text)
+// entries; dedup by (key, normalized-text) keeps the posting lists
+// clean.
+//
+// Per-segment indexing (rather than per-word) preserves the previous
+// algorithm's behaviour: a query like 'الله' matches the segment 'ل'
+// (the definite article prefix) via the substring direction, which
+// matches every word containing that morpheme — that's the same set
+// the old linear scan produced.
+func buildArabicInvertedIndex(segPairs []arabicPairLocal) map[string][]uint64 {
+	// Use a set keyed by (locKey, normalized) to dedupe, then
+	// materialize postings.
+	seen := make(map[struct {
+		k uint64
+		t string
+	}]struct{}, len(segPairs))
+	postings := make(map[string][]uint64, 16000)
+	for _, p := range segPairs {
+		key := struct {
+			k uint64
+			t string
+		}{p.key, p.normed}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		postings[p.normed] = append(postings[p.normed], p.key)
+	}
+	// Sort and dedupe each posting list (different segments of the
+	// same word may have produced the same key).
+	for t := range postings {
+		lst := postings[t]
+		// Dedupe
+		uniq := lst[:0]
+		var last uint64
+		for i, k := range lst {
+			if i == 0 || k != last {
+				uniq = append(uniq, k)
+				last = k
+			}
+		}
+		postings[t] = uniq
+		// Sort
+		sort.Slice(uniq, func(i, j int) bool { return uniq[i] < uniq[j] })
+	}
+	return postings
+}
+
+// loadRootsFromDB reads roots + word-root mappings and builds a
+// RootsIndex with ByRoot, ByLoc, and ByArabic maps.
+func loadRootsFromDB(db *sql.DB) (*types.RootsIndex, error) {
+	idx := &types.RootsIndex{
+		ByRoot:       make(map[string]*types.RootEntry, 1700),
+		ByLoc:        make(map[uint64]string, 50000),
+		ByArabic:     make(map[string]string, 1700),
+		RootsBySurah: make(map[int]map[string]bool, 114),
+	}
+
+	// Roots table — schema mirrors meanings-roots-ai.jsonl exactly.
+	// This is the single source of truth for root data.
+	rrows, err := db.Query(`
+		SELECT root_buckwalter, root_arabic, root_letters, pos,
+		       occurrences_quran, meaning_en, meaning_ar,
+		       COALESCE(meaning_ar_definition, ''),
+		       COALESCE(etymology, ''),
+		       COALESCE(hadith_evidence, ''),
+		       COALESCE(core_semantic, '')
+		FROM roots
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rrows.Close()
+
+	type dbRoot struct {
+		bw, arabic, letters, pos, men, mar, coreSemantic string
+		arDef, etymologyJSON, hadithJSON                 string
+		freq                                             int
+	}
+	dbRoots := map[string]*dbRoot{}
+	for rrows.Next() {
+		var dr dbRoot
+		if err := rrows.Scan(&dr.bw, &dr.arabic, &dr.letters, &dr.pos, &dr.freq,
+			&dr.men, &dr.mar, &dr.arDef, &dr.etymologyJSON, &dr.hadithJSON, &dr.coreSemantic); err != nil {
+			return nil, err
+		}
+		drCopy := dr
+		dbRoots[dr.bw] = &drCopy
+	}
+	if err := rrows.Err(); err != nil {
+		return nil, err
+	}
+
+	// All root data comes from the DB — meanings-roots-ai.jsonl is the
+	// sole source; no runtime file loading needed.
+	for _, dr := range dbRoots {
+		entry := &types.RootEntry{
+			Buckwalter:   dr.bw,
+			Arabic:       dr.arabic,
+			Letters:      dr.letters,
+			POS:          dr.pos,
+			Occurrences:  dr.freq,
+			MeaningEN:    dr.men,
+			MeaningAR:    dr.mar,
+			CoreSemantic: dr.coreSemantic,
+			Locations:    nil, // populated below from words table
+		}
+		// Fallback: use ar_definition when meaning_ar is empty.
+		if entry.MeaningAR == "" {
+			entry.MeaningAR = dr.arDef
+		}
+		// Deserialize etymology JSON for Ibn Faris / Al-Raghib.
+		if dr.etymologyJSON != "" {
+			var etym struct {
+				IbnFaris string `json:"ibn_faris"`
+				AlRaghib string `json:"al_raghib"`
+			}
+			if err := json.Unmarshal([]byte(dr.etymologyJSON), &etym); err == nil {
+				entry.IbnFaris = etym.IbnFaris
+				entry.AlRaghib = etym.AlRaghib
+			}
+		}
+		// Deserialize hadith evidence.
+		if dr.hadithJSON != "" {
+			var hadithList []struct {
+				Arabic  string `json:"ar"`
+				English string `json:"en"`
+				Source  string `json:"source"`
+			}
+			if err := json.Unmarshal([]byte(dr.hadithJSON), &hadithList); err == nil {
+				for _, h := range hadithList {
+					entry.HadithExamples = append(entry.HadithExamples, types.HadithExample{
+						Arabic: h.Arabic, English: h.English, Source: h.Source,
+					})
+				}
+			}
+		}
+		idx.ByRoot[dr.bw] = entry
+
+		// Build ByArabic reverse lookup from root_letters. The key
+		// uses the same canonicalization as the query path
+		// (types.NormalizeArabicRoot) so any reasonable Arabic
+		// input — "قول", "ق و ل", "اب ي" vs "أب ي" — resolves to
+		// the same bucket.
+		if dr.letters != "" {
+			norm := types.NormalizeArabicRoot(dr.letters)
+			if norm != "" {
+				idx.ByArabic[norm] = dr.bw
+			}
+		}
+	}
+
+	// Word-root mappings (ByLoc) and location lists.
+	wrows, err := db.Query(`
+		SELECT v.surah_id, v.verse_number, w.word_number, w.root_buckwalter
+		FROM words w
+		JOIN verses v ON w.verse_id = v.id
+		WHERE w.root_buckwalter IS NOT NULL
+		  AND w.root_buckwalter != ''
+		  AND w.root_buckwalter != 'None'
+		ORDER BY v.surah_id, v.verse_number, w.word_number
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer wrows.Close()
+
+	for wrows.Next() {
+		var surah, ayah, wordNo int
+		var bw string
+		if err := wrows.Scan(&surah, &ayah, &wordNo, &bw); err != nil {
+			return nil, err
+		}
+		key := loc.Key(surah, ayah, wordNo)
+		idx.ByLoc[key] = bw
+
+		// Append location to the root entry.
+		if entry, ok := idx.ByRoot[bw]; ok {
+			locStr := loc.String(key)
+			entry.Locations = append(entry.Locations, locStr)
+		}
+
+		// Populate per-surah root set for filtering.
+		if idx.RootsBySurah[surah] == nil {
+			idx.RootsBySurah[surah] = make(map[string]bool, 200)
+		}
+		idx.RootsBySurah[surah][bw] = true
+	}
+	if err := wrows.Err(); err != nil {
+		return nil, err
+	}
+
+	return idx, nil
+}

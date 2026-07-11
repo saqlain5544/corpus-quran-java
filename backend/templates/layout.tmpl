@@ -1,0 +1,49 @@
+{{define "layout"}}<!doctype html>
+<html lang="en" dir="ltr" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.Title}} — Quran Reader</title>
+  <script>
+    try {
+      var t = localStorage.getItem("qr.theme");
+      if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+    } catch(e){}
+  </script>
+  <link rel="preload" href="/fonts/hafs.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/static/css/main.css">
+  <noscript>
+    <style>
+      /* Hide features that require JS so the static page is clean. */
+      #word-tooltip,
+      .ssp-close,
+      .surah-side-panel,
+      .continue-reading,
+      [data-component="bookmarks-toggle"],
+      [data-component="theme-toggle"],
+      [data-component="bookmarks-drawer"],
+      [data-component="gh-recent"] { display: none !important; }
+    </style>
+  </noscript>
+</head>
+<body class="app" data-page="{{.Title}}">
+  <a class="skip" href="#main">Skip to content</a>
+  {{template "global-header" .}}
+  <main id="main" class="page">
+    {{block "content" .}}{{end}}
+  </main>
+  <div id="word-tooltip" class="word-tooltip" role="tooltip" hidden></div>
+  <script src="/static/js/storage.js" defer></script>
+  <script src="/static/js/dom.js" defer></script>
+  <script src="/static/js/app.js" defer></script>
+  <script src="/static/js/global-header.js" defer></script>
+  <script src="/static/js/recent-searches.js" defer></script>
+  <script src="/static/js/surah-header.js" defer></script>
+  <script src="/static/js/verse-scroll.js" defer></script>
+  <script src="/static/js/word-tooltip.js" defer></script>
+  <script src="/static/js/surah-side-panel.js?v=2" defer></script>
+  <script src="/static/js/bookmarks.js" defer></script>
+  <script src="/static/js/continue-reading.js" defer></script>
+</body>
+</html>{{end}}

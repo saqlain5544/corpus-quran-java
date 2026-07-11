@@ -1,0 +1,38 @@
+{{define "search.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-search measure-wide">
+  <header class="layout-header">
+    <h1>{{if .Query}}Results for &ldquo;{{.Query}}&rdquo;{{else}}Search{{end}}</h1>
+    {{if .Query}}
+      <p class="layout-header-meta">{{len .Results}} results in <span class="search-type">{{.Type}}</span></p>
+    {{else}}
+      <p class="layout-header-meta">Use the box in the header to search by root, English gloss, or Arabic word.</p>
+    {{end}}
+  </header>
+
+  {{if .Results}}
+  <ol class="search-results surface">
+    {{range .Results}}
+      <li class="search-result" data-kind="{{.Kind}}">
+        <a class="search-link" href="{{.Link}}">{{.Title}}</a>
+        {{if .VerseText}}<p class="search-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
+        {{if .Snippet}}<p class="search-snippet">{{.Snippet | safeHTML}}</p>{{end}}
+        {{if .Root}}<small class="search-root">root: <a href="/root/detailed/{{.Root}}">{{.Root}}</a></small>{{end}}
+      </li>
+    {{end}}
+  </ol>
+  {{else if .Query}}
+  <section class="search-empty surface">
+    <h2>No matches for &ldquo;{{.Query}}&rdquo;</h2>
+    <p>Try one of these instead:</p>
+    <nav class="search-empty-actions" aria-label="Alternative searches">
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=arabic">Arabic: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=root">Root: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/search?q={{.Query}}&type=translation">Translation: <q>{{.Query}}</q></a>
+      <a class="search-empty-action" href="/roots">Browse all roots</a>
+      <a class="search-empty-action" href="/concordance">View concordance</a>
+    </nav>
+  </section>
+  {{end}}
+</div>
+{{end}}

@@ -1,0 +1,43 @@
+{{define "roots-list.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-roots measure-wide">
+  <header class="layout-header">
+    <h1>Roots</h1>
+    <div class="layout-header-actions surface surface--bare">
+      <form class="cluster" method="get" action="/roots" data-component="auto-submit-filters">
+        <label for="roots-filter-surah">Surah:</label>
+        <select id="roots-filter-surah" name="surah">
+          <option value="">All</option>
+          {{range .SurahOpts}}
+          <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
+          {{end}}
+        </select>
+        <label for="roots-filter-sort">Sort:</label>
+        <select id="roots-filter-sort" name="sort">
+          <option value="desc" {{if not .Asc}}selected{{end}}>Most frequent first</option>
+          <option value="asc" {{if .Asc}}selected{{end}}>Least frequent first</option>
+        </select>
+        <button type="submit" class="filter-apply">Apply</button>
+      </form>
+    </div>
+  </header>
+
+  <ol class="roots-list surface surface--bare">
+    {{range .Results}}
+      <li class="root-row">
+        <a class="root-link" href="{{.Link}}">
+          <span class="root-buckwalter">{{.Root}}</span>
+          <span class="root-count">{{.Score}}×</span>
+        </a>
+        <p class="root-title">{{.Title}}</p>
+      </li>
+    {{end}}
+  </ol>
+
+  <nav class="pagination surface surface--bare" aria-label="Pagination">
+    {{if .HasPrev}}<a class="page-prev" href="/roots?page={{dec .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">← Prev</a>{{end}}
+    <span class="page-info">Page {{.Page}}</span>
+    {{if .HasNext}}<a class="page-next" href="/roots?page={{inc .Page}}&sort={{if .Asc}}asc{{else}}desc{{end}}{{if .FilterSurah}}&surah={{.FilterSurah}}{{end}}">Next →</a>{{end}}
+  </nav>
+</div>
+{{end}}

@@ -1,0 +1,192 @@
+{{define "surah.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-surah" data-surah="{{.Surah.Number}}">
+  <!-- Column 1: Fixed root-detail side panel -->
+  <aside class="surah-side-panel" id="surah-side-panel" data-component="surah-side-panel">
+    <header class="ssp-header">
+      <span class="ssp-header-label">Word analysis</span>
+      <span class="ssp-header-hint">Click any word</span>
+    </header>
+    <div class="ssp-inner" id="ssp-content">
+      <div class="ssp-empty-state">
+        <p class="ssp-empty-icon" aria-hidden="true">⤵</p>
+        <p class="ssp-empty-title">Click any word</p>
+        <p class="ssp-empty-body">
+          Hover for a quick tooltip, or click for the full root analysis,
+          lemma frequency, and morphological breakdown.
+        </p>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main surah content (68% of the 2/30/68 grid on desktop) -->
+  <div class="surah-main">
+  <header class="surah-header surface surface--bare" data-sticky="below-global">
+    <div class="sh-row sh-nav-row">
+      <div class="sh-nav-left">
+        {{if .Prev}}<a class="sh-prev" href="/surah/{{.Prev.Number}}" rel="prev">← {{.Prev.Number}}</a>{{else}}<span class="sh-prev disabled">←</span>{{end}}
+      </div>
+      <h1 class="surah-title">
+        <span class="surah-title-num">{{.Surah.Number}}</span>
+        <span class="surah-title-name">{{.Surah.Name}}</span>
+      </h1>
+      {{/*
+        Surah metadata row — Latin name, revelation type, English
+        description. Each span is conditionally rendered; the
+        wrapper itself is always present so the markup can be
+        selected even when the DB has no metadata yet.
+      */}}
+      <div class="sh-meta" data-component="sh-meta">
+        {{if .Surah.NameLatin}}<span class="sh-meta-latin">{{.Surah.NameLatin}}</span>{{end}}
+        {{if .Surah.RevelationType}}<span class="sh-meta-rev" data-type="{{.Surah.RevelationType}}">{{.Surah.RevelationType}}</span>{{end}}
+        {{if .Surah.EnglishTranslation}}<span class="sh-meta-translation">{{.Surah.EnglishTranslation}}</span>{{end}}
+      </div>
+      <div class="sh-nav-right">
+        {{if .Next}}<a class="sh-next" href="/surah/{{.Next.Number}}" rel="next">{{.Next.Number}} →</a>{{else}}<span class="sh-next disabled">→</span>{{end}}
+      </div>
+    </div>
+    <div class="sh-row sh-ctrl-row">
+      <form class="sh-search" data-component="surah-local-search" role="search">
+        <input type="search" placeholder="Search in surah…" aria-label="Search in surah" />
+      </form>
+      <div class="sh-control">
+        <label for="font-size-input" class="sh-label">Font</label>
+        <input id="font-size-input" type="range" min="10" max="40" step="1" value="22" data-component="font-size">
+        <output class="sh-value" for="font-size-input" id="font-size-value" aria-live="polite">22 px</output>
+      </div>
+      <div class="sh-control">
+        <label for="line-height-input" class="sh-label">Line</label>
+        <input id="line-height-input" type="range" min="1" max="3" step="0.1" value="2" data-component="line-height">
+        <output class="sh-value" for="line-height-input" id="line-height-value" aria-live="polite">2.0</output>
+      </div>
+      {{if .TransOptions}}
+      <div class="sh-control">
+        <label for="trans-select" class="sh-label">Trans.</label>
+        <select id="trans-select" data-component="translation-select" aria-label="Translation">
+          <option value="-1">None</option>
+          {{range .TransOptions}}
+          <option value="{{.Idx}}" {{if eq $.TransIdx .Idx}}selected{{end}} dir="{{.Dir}}">{{.Label}}</option>
+          {{end}}
+        </select>
+      </div>
+      {{end}}
+    </div>
+  </header>
+
+  {{if .Surah.Bismillah}}
+  <p class="bismillah surface surface--bare" lang="ar" dir="rtl">{{.Surah.Bismillah}}</p>
+  {{end}}
+
+  <article class="quran" lang="ar" dir="rtl">
+    {{range $i, $ae := .AyahEntries}}
+      {{$an := $ae.Ayah.Number}}
+      {{/*
+        Count word tokens to find the last-word index. Word numbers are
+        1-based and only count "word" tokens (marks do not increment the
+        counter), so the largest WordNo in the slice is the last word.
+        We pre-compute it in a single pass to avoid inline conditionals
+        during the render loop.
+      */}}
+      {{$lastWordNo := 0}}
+      {{range $t := $ae.Ayah.Tokens}}{{if eq $t.Kind "word"}}{{if gt $t.WordNo $lastWordNo}}{{$lastWordNo = $t.WordNo}}{{end}}{{end}}{{end}}
+
+      {{/*
+        data-search-text is the pre-computed normalized text for
+        the local in-page search (surah-header.js). The hot loop
+        reads this attribute instead of textContent on every
+        submit, which means no DOM traversal per ayah per search.
+        We populate it server-side so the cache is ready on first
+        paint — no FOUC, no JS back-fill pass.
+      */}}
+      <section class="ayah surface surface--bare" id="verse-{{$an}}" data-ayah="{{$an}}" data-surah="{{$.Surah.Number}}" data-search-text="{{$ae.Ayah.SearchText}}">
+        <button type="button" class="ayah-bookmark" data-component="ayah-bookmark"
+                data-surah="{{$.Surah.Number}}" data-ayah="{{$an}}"
+                aria-label="Bookmark verse {{$an}}" title="Bookmark">☆</button>
+        <p class="ayah-text" lang="ar" dir="rtl">
+          {{- range $t := $ae.Ayah.Tokens -}}
+            {{- if eq $t.Kind "word" -}}
+              {{- $isLastWord := eq $t.WordNo $lastWordNo -}}
+              {{/*
+                word-cluster wraps the word button + any trailing marks
+                (pause, sajdah, rub', iqlab, etc.) in a single
+                inline-block + nowrap unit so they cannot be split by
+                line wrap. The last word's cluster also contains the
+                ayah-number SVG so the verse mark always stays with
+                the last word.
+              */}}
+              <span class="word-cluster{{if $isLastWord}} word-cluster--end{{end}}">
+                <button type="button" class="word"
+                  data-surah="{{$.Surah.Number}}"
+                  data-ayah="{{$an}}"
+                  data-word="{{$t.WordNo}}"
+                  data-root="{{index $ae.WordRoots $t.WordNo}}"
+                  data-component="word"
+                  aria-haspopup="dialog">{{$t.Value}}</button>{{range $m := $t.Marks}}<span class="mark mark-trail" data-char="{{$m}}">{{$m}}</span>{{end}}
+                {{- if $isLastWord -}}
+                  <a class="ayah-number-link" href="#verse-{{$an}}" aria-label="Verse {{$an}}" title="Verse {{$an}}">
+                    <svg class="ayah-number" viewBox="0 0 48 48" width="1.7em" height="1.7em" aria-hidden="true">
+                      {{/* Decorative outer frame — octagonal/star-shaped (8-point star inscribed in a circle).
+                          Quran.com and most modern mushaf apps use a similar decorative
+                          enclosure around the verse number. */}}
+                      <path class="ayah-number-bg" d="M24 1.5
+                               L29.8 4.5
+                               L36.6 3.4
+                               L40.5 9.1
+                               L46.5 13.2
+                               L45.4 20
+                               L48.5 25.8
+                               L43.8 31.4
+                               L44.9 38.2
+                               L38.7 41.3
+                               L34.6 47.3
+                               L27.8 46.2
+                               L24 48.5
+                               L20.2 46.2
+                               L13.4 47.3
+                               L9.3 41.3
+                               L3.1 38.2
+                               L4.2 31.4
+                               L-0.5 25.8
+                               L2.6 20
+                               L1.5 13.2
+                               L7.5 9.1
+                               L11.4 3.4
+                               L18.2 4.5
+                               Z"/>
+                      {{/* Inner ring — a thinner circle inside the decorative frame,
+                          gives a refined "double-line" look like classic mushaf prints. */}}
+                      <circle cx="24" cy="25" r="15" class="ayah-number-ring"/>
+                      {{/* Subtle inner background — solid gold fill so the number is
+                          legible against the lighter outer frame. */}}
+                      <circle cx="24" cy="25" r="14" class="ayah-number-fill"/>
+                      {{/* The verse number itself. dominant-baseline=central + text-anchor=middle
+                          keeps the digits perfectly centred both horizontally and
+                          vertically regardless of font size or digit count (1-3 digits). */}}
+                      <text x="24" y="25" text-anchor="middle" dominant-baseline="central" class="ayah-number-text">{{$an}}</text>
+                    </svg>
+                  </a>
+                {{- end -}}
+              </span>
+            {{- else -}}
+              <span class="mark" data-char="{{$t.Value}}">{{$t.Value}}</span>
+            {{- end -}}
+          {{- end -}}
+        </p>
+        <!-- All translations pre-rendered, toggled by JS -->
+        {{if $.TransOptions}}
+        <div class="ayah-translations">
+          {{range $ti, $ts := $.TransOptions}}
+          <p class="ayah-translation"
+             data-trans-idx="{{$ti}}"
+             data-trans-dir="{{(index $.TransOptions $ti).Dir}}"
+             dir="{{(index $.TransOptions $ti).Dir}}"
+             {{if ne $ti $.TransIdx}}hidden{{end}}>{{index $.AllAyahTrans $ti $i}}</p>
+          {{end}}
+        </div>
+        {{end}}
+      </section>
+    {{end}}
+  </article>
+  </div><!-- /surah-main -->
+</div>
+{{end}}

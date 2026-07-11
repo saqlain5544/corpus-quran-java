@@ -1,0 +1,216 @@
+{{define "root-detail.tmpl"}}{{template "layout" .}}{{end}}
+{{define "content"}}
+<div class="page-root-detail">
+
+  <!-- ── Root Header ──────────────────────────────────────── -->
+  <header class="layout-header root-detail-header">
+    <h1>
+      <span class="rdh-arabic" lang="ar" dir="rtl">{{.Entry.Arabic}}</span>
+      <small class="rdh-buckwalter">({{.Root}})</small>
+      <span class="rdh-count">{{.Entry.Occurrences}} occurrences</span>
+    </h1>
+    {{if .Entry.Letters}}<p class="rdh-letters" lang="ar" dir="rtl">Root letters: {{.Entry.Letters}}</p>{{end}}
+    <p class="layout-header-meta rdh-pos">POS: {{.Entry.POS}}</p>
+  </header>
+
+  <!-- ── Two-column body: info left, sidebar right ─────────── -->
+  <div class="layout-shell layout-shell--two-col">
+
+    <!-- Left (8fr): scrollable info panels -->
+    <div class="stack">
+
+      <!-- Meaning -->
+      <section class="surface stack" aria-label="Meaning">
+        <h2>Meaning</h2>
+        {{if .Entry.MeaningEN}}<p class="meaning-en">{{.Entry.MeaningEN}}</p>{{end}}
+        {{if .Entry.MeaningAR}}<p class="meaning-ar" lang="ar" dir="rtl">{{.Entry.MeaningAR}}</p>{{end}}
+        {{if .Entry.CoreSemantic}}<p class="meaning-core"><strong>Core semantic field:</strong> {{.Entry.CoreSemantic}}</p>{{end}}
+      </section>
+
+      <!-- Classical Lexicons -->
+      {{if or .Entry.IbnFaris .Entry.AlRaghib}}
+      <section class="surface stack" aria-label="Classical lexicons">
+        <h2>Classical Lexicons</h2>
+        {{if .Entry.IbnFaris}}<p class="lex-ref"><strong>Ibn Fāris:</strong> {{.Entry.IbnFaris}}</p>{{end}}
+        {{if .Entry.AlRaghib}}<p class="lex-ref"><strong>Al-Rāghib:</strong> {{.Entry.AlRaghib}}</p>{{end}}
+      </section>
+      {{end}}
+
+      <!-- Morphology Summary (from MASAQ segments across all occurrences) -->
+      {{if .MorphSummary}}
+      <section class="surface stack" aria-label="Morphology summary">
+        <h2>Morphology Summary</h2>
+        <p class="rd-morph-note">Derived from MASAQ morphological analysis of all {{.Entry.Occurrences}} occurrences.</p>
+        <table class="rd-morph-table" aria-label="Morphological pattern breakdown">
+          <thead>
+            <tr>
+              <th scope="col">Tag</th>
+              <th scope="col">Type</th>
+              <th scope="col" class="rd-morph-num">Count</th>
+              <th scope="col" class="rd-morph-num">%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {{range .MorphSummary}}
+            <tr>
+              <td class="rd-morph-tag-cell"><span class="rd-morph-tag">{{.Tag}}</span></td>
+              <td class="rd-morph-type-cell">{{.Type}}</td>
+              <td class="rd-morph-num">{{.Count}}</td>
+              <td class="rd-morph-num">{{printf "%.1f" .Pct}}%</td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </section>
+      {{end}}
+
+      <!-- Quranic Examples -->
+      {{if .Entry.QuranExamples}}
+      <section class="surface stack" aria-label="Quranic examples">
+        <h2>Quranic Examples</h2>
+        {{range .Entry.QuranExamples}}
+        <article class="surface surface--bare stack--tight">
+          <a class="rd-ex-ref" href="/surah/{{index (splitn .Ref ":" 2) 0}}#verse-{{index (splitn .Ref ":" 2) 1}}">{{.Ref}}</a>
+          <p class="rd-ex-arabic" lang="ar" dir="rtl">{{.Arabic}}</p>
+          <p class="rd-ex-english">{{.English}}</p>
+          {{if .Context}}<p class="rd-ex-context">{{.Context}}</p>{{end}}
+        </article>
+        {{end}}
+      </section>
+      {{end}}
+
+      <!-- Hadith References -->
+      {{if .Entry.HadithExamples}}
+      <section class="surface stack" aria-label="Hadith references">
+        <h2>Hadith References</h2>
+        {{range .Entry.HadithExamples}}
+        <article class="surface surface--bare stack--tight">
+          <p class="rd-hadith-arabic" lang="ar" dir="rtl">{{.Arabic}}</p>
+          <p class="rd-hadith-english">{{.English}}</p>
+          <p class="rd-hadith-source">{{.Source}}</p>
+        </article>
+        {{end}}
+      </section>
+      {{end}}
+
+      <!-- Concordance Lemmas -->
+      {{if .ConLemmas}}
+      <section class="surface stack" aria-label="Concordance lemmas">
+        <h2>Concordance — Lemmas</h2>
+        {{range .ConLemmas}}
+        <article class="surface surface--bare stack--tight">
+          <h3 class="rd-lemma-head">
+            <span class="rd-lemma-arabic" lang="ar" dir="rtl">{{.Arabic}}</span>
+            <span class="rd-lemma-count">{{.Occurrences}}×</span>
+          </h3>
+          <ol class="rd-lemma-occ stack stack--tight">
+            {{range .Verses}}
+            <li class="rd-lo-row">
+              <a class="rd-lo-link" href="{{.Link}}">{{.Ref}}</a>
+              {{if .VerseText}}<p class="rd-lo-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
+              {{if .Translation}}<p class="rd-lo-trans">{{.Translation}}</p>{{end}}
+            </li>
+            {{end}}
+          </ol>
+        </article>
+        {{end}}
+      </section>
+      {{end}}
+
+    </div><!-- /left column -->
+
+    <!-- Right (4fr): sticky sidebar -->
+    <aside class="layout-aside layout-aside--sticky stack">
+
+      <!-- Surah Distribution -->
+      {{if .SurahDistribution}}
+      <section class="surface stack stack--tight" aria-label="Surah distribution">
+        <h2>Distribution by Surah</h2>
+        <p class="rd-dist-summary">{{len .SurahDistribution}} surahs contain this root.</p>
+        <ol class="rd-dist-list">
+          {{range .SurahDistribution}}
+          <li class="rd-dist-row">
+            <a class="rd-dist-link" href="/root/detailed/{{$.Root}}?surah={{.Number}}">{{.Number}}. {{.Name}}</a>
+            <span class="rd-dist-count">{{.Count}}×</span>
+          </li>
+          {{end}}
+        </ol>
+      </section>
+      {{end}}
+
+    </aside>
+  </div><!-- /two-col -->
+
+  <!-- ── Occurrences — full width, below the fold ─────────── -->
+  <hr class="rd-occ-divider">
+  <section class="surface stack" aria-label="Occurrences">
+    <div class="cluster">
+      <form class="cluster" method="get" action="/root/detailed/{{.Root}}" data-component="auto-submit-filters">
+        <label for="rd-filter-surah">Surah:</label>
+        <select id="rd-filter-surah" name="surah">
+          <option value="">All</option>
+          {{range .SurahOpts}}
+          <option value="{{.Number}}" {{if eq $.FilterSurah .Number}}selected{{end}}>{{.Number}}. {{.Name}}</option>
+          {{end}}
+        </select>
+        <label for="rd-filter-sort">Sort:</label>
+        <select id="rd-filter-sort" name="sort">
+          <option value="desc" {{if not .Asc}}selected{{end}}>Surah order</option>
+          <option value="asc" {{if .Asc}}selected{{end}}>Ascending</option>
+        </select>
+        <button type="submit" class="filter-apply">Apply</button>
+      </form>
+    </div>
+    <p class="rd-occ-summary">
+      Showing {{len .Occurrences}} occurrence{{if ne (len .Occurrences) 1}}s{{end}}{{if .FilterSurah}} in surah {{.FilterSurah}}{{else}} across the Quran{{end}}.
+    </p>
+
+    <ol class="rd-occ-list">
+      {{range .Occurrences}}
+      <li class="rd-occ-row">
+        <div class="rd-occ-header">
+          <a class="rd-occ-link" href="{{.Link}}">{{.Title}}</a>
+          {{if .Snippet}}<span class="rd-occ-word" lang="ar" dir="rtl">{{.Snippet}}</span>{{end}}
+        </div>
+
+        <!-- Morphology inline — one chip per segment, read left to right -->
+        {{if .MorphSegments}}
+        <div class="rd-occ-morph" aria-label="Morphology">
+          {{range .MorphSegments}}
+          <span class="rd-morph-chip">
+            <span class="rd-morph-chip-tag">{{.MorphTag}}</span>
+            {{if .MorphType}}<span class="rd-morph-chip-sep">·</span><span class="rd-morph-chip-type">{{.MorphType}}</span>{{end}}
+            {{if .SyntacticRole}}<span class="rd-morph-chip-sep">·</span><span class="rd-morph-chip-role">{{.SyntacticRole}}</span>{{end}}
+            {{if .CaseMood}}<span class="rd-morph-chip-sep">·</span><span class="rd-morph-chip-case">{{.CaseMood}}</span>{{end}}
+          </span>
+          {{end}}
+          {{/* Gloss and Translation from the stem segment, shown once after chips */}}
+          {{with index .MorphSegments 0}}
+          {{if .Gloss}}<span class="rd-occ-gloss">Gloss: {{.Gloss}}</span>{{end}}
+          {{if .Translation}}<span class="rd-occ-gloss">Trans: {{.Translation}}</span>{{end}}
+          {{end}}
+        </div>
+        {{else}}
+        <p class="rd-occ-no-morph">— no morphology data</p>
+        {{end}}
+
+        {{if .VerseText}}<p class="rd-occ-verse" lang="ar" dir="rtl">{{.VerseText}}</p>{{end}}
+      </li>
+      {{end}}
+    </ol>
+
+    {{if .Entry.Locations}}
+    <details class="rd-locations">
+      <summary>All <code>s:v:w</code> locations ({{len .Entry.Locations}})</summary>
+      <ol class="rd-loc-list">
+        {{range .Entry.Locations}}
+        {{$parts := splitn . ":" 3}}
+        <li><a href="/surah/{{index $parts 0}}#verse-{{index $parts 1}}">{{.}}</a></li>
+        {{end}}
+      </ol>
+    </details>
+    {{end}}
+  </section>
+
+</div>
+{{end}}

@@ -1,0 +1,739 @@
+/* components.css — global header (full viewport width),
+ * surah header (constrained to match the surah body width),
+ * tooltip, modal.
+ */
+
+/* ── Global header (100vw, sticky to top) ───────────────────── */
+/* The header element itself fills the viewport; its inner content
+ * (brand + search + nav) is centered and capped at the page max-width
+ * for visual rhythm. The background spans the full width so the
+ * sticky surface looks uninterrupted.
+ *
+ * Layout strategy across viewports (implemented in @media below):
+ *   ≥900px:  |hamburger| brand | search | nav + actions |
+ *   640-900: |hamburger| brand | search | nav |
+ *   <640px:   |hamburger| brand | search (full width on row 2)
+ *
+ * On narrow viewports the full nav collapses behind a hamburger
+ * button + the slide-in .gh-nav-drawer. */
+.global-header {
+  position: sticky;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100vw;
+  z-index: var(--z-sticky);
+  background: var(--bg-elev);
+  border-bottom: var(--border-w) solid var(--rule);
+  backdrop-filter: saturate(180%) blur(8px);
+}
+.gh-inner {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto;
+  grid-template-areas: "hamburger brand search nav actions";
+  align-items: center;
+  column-gap: var(--sp-4);
+  row-gap: var(--sp-2);
+  max-width: var(--grid-max);
+  margin: 0 auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+.gh-hamburger { grid-area: hamburger; }
+.gh-brand     { grid-area: brand; }
+.gh-search-wrap { grid-area: search; min-width: 0; }
+.gh-nav       { grid-area: nav; }
+/* Mobile-only actions: ★ + ◐ on narrow viewports. Hidden on
+ * desktop because the same icons live in .gh-nav above. */
+.gh-actions-mobile { grid-area: actions; display: none; }
+
+/* Hamburger button — hidden on desktop, visible on narrow viewports
+ * via @media. 44x44 touch target. */
+.gh-hamburger {
+  display: none;
+  background: none;
+  border: 0;
+  padding: var(--sp-2);
+  cursor: pointer;
+  color: var(--ink);
+  border-radius: var(--radius-sm);
+  line-height: 0; /* keeps icon tightly bound to button edge */
+}
+.gh-hamburger:hover { background: var(--bg-sunken); }
+.gh-hamburger svg { display: block; }
+
+/* "Open" state — flips the bars into an X when expanded. */
+.gh-hamburger[aria-expanded="true"] svg path {
+  d: path("M6 6l12 12M18 6l-12 12");
+}
+
+.gh-brand {
+  font: 600 var(--fs-lg)/1 var(--font-latin);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.gh-search { display: flex; gap: var(--sp-2); min-width: 0; }
+.gh-search input,
+.gh-search select,
+.gh-search button {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg);
+  color: var(--ink);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+.gh-search input { flex: 1; min-width: 6rem; }
+.gh-search button {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+  cursor: pointer;
+}
+.gh-search button:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+
+/* Search-wrapper holds both the form and the recent-searches
+ * dropdown so they can share a position-relative anchor. */
+.gh-search-wrap { position: relative; min-width: 0; }
+
+/* Recent searches dropdown — opens on focus, populated by
+ * recent-searches.js from localStorage. Hidden when empty. */
+.gh-recent {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px oklch(0% 0 0 / 0.10);
+  z-index: calc(var(--z-sticky) + 1);
+  overflow: hidden;
+}
+.gh-recent[hidden] { display: none; }
+.gh-recent-head {
+  font: 600 var(--fs-xs)/1 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  padding: var(--sp-2) var(--sp-3) var(--sp-1);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-recent-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.gh-recent-list li {
+  display: block;
+}
+.gh-recent-list button {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--sp-2);
+  align-items: baseline;
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+}
+.gh-recent-list button:hover,
+.gh-recent-list button:focus-visible {
+  background: var(--word-hover-bg);
+}
+.gh-recent-q {
+  font: 600 var(--fs-sm)/1 var(--font-latin);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gh-recent-q.ar {
+  font: 600 var(--fs-sm)/1 var(--font-arabic);
+  direction: rtl;
+  text-align: right;
+}
+.gh-recent-type {
+  font: var(--fs-xs)/1 var(--font-latin);
+  color: var(--ink-soft);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.gh-recent-clear {
+  width: 100%;
+  padding: var(--sp-2) var(--sp-3);
+  background: transparent;
+  border: 0;
+  border-top: var(--border-w) solid var(--rule);
+  color: var(--ink-soft);
+  font: var(--fs-xs)/1 var(--font-latin);
+  cursor: pointer;
+}
+.gh-recent-clear:hover { color: var(--ink); background: var(--word-hover-bg); }
+
+.gh-nav { display: flex; gap: var(--sp-3); align-items: center; }
+.gh-nav a {
+  color: var(--ink);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  transition: color var(--dur-fast) var(--ease-out),
+              background var(--dur-fast) var(--ease-out);
+}
+.gh-nav a:hover { color: var(--accent); }
+
+/* Mobile nav drawer — slides down from the header when the
+ * hamburger is tapped. Hidden by default; the JS toggles [hidden].
+ * Slim vertical list of full-width tappable links. */
+.gh-nav-drawer {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border-top: var(--border-w) solid var(--rule);
+  max-height: 12rem; /* large enough for the three nav links */
+  overflow: hidden;
+  transition: max-height var(--dur-base) var(--ease-out);
+}
+.gh-nav-drawer[hidden] {
+  max-height: 0;
+}
+/* Width + horizontal centering — the drawer spans the full viewport
+ * while the header sits inside the page's max-width container. */
+.gh-nav-drawer {
+  width: 100vw;
+}
+.gh-nav-drawer a {
+  padding: var(--sp-3) var(--sp-6);
+  color: var(--ink);
+  text-decoration: none;
+  font: 600 var(--fs-md)/1.4 var(--font-latin);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-nav-drawer a:last-child { border-bottom: 0; }
+.gh-nav-drawer a:hover,
+.gh-nav-drawer a:focus-visible {
+  background: var(--bg-sunken);
+  color: var(--accent);
+}
+/* Active nav state — set body[data-page] in layout.tmpl. The
+   gold underline + accent color matches the bookmarks button's
+   "pressed" state for visual consistency. */
+body[data-page="Roots"] .gh-nav a[href="/roots"],
+body[data-page="root-detail"] .gh-nav a[href="/roots"],
+body[data-page="Concordance"] .gh-nav a[href="/concordance"],
+body[data-page="About"] .gh-nav a[href="/about"] {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.gh-theme,
+.gh-bookmarks {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.gh-theme:hover,
+.gh-bookmarks:hover { background: var(--bg-sunken); }
+.gh-bookmarks[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--word-hover-bg);
+}
+
+/* Bookmarks drawer — slides down from the header when the star
+ * toggle is pressed. Contains the list of saved s:v bookmarks with
+ * delete buttons. */
+.gh-bookmarks-drawer {
+  position: absolute;
+  top: 100%;
+  right: var(--sp-4);
+  width: 22rem;
+  max-width: calc(100vw - 2 * var(--sp-4));
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
+  box-shadow: 0 6px 24px oklch(0% 0 0 / 0.14);
+  z-index: calc(var(--z-sticky) + 1);
+}
+.gh-bookmarks-drawer[hidden] { display: none; }
+.gh-bookmarks-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: var(--sp-3);
+  border-bottom: var(--border-w) solid var(--rule);
+  font: 600 var(--fs-xs)/1 var(--font-latin);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+}
+.gh-bookmarks-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.gh-bookmarks-count {
+  font: 600 var(--fs-xs)/1 var(--font-mono);
+  letter-spacing: 0;
+  color: var(--ink-muted);
+  background: var(--bg-sunken);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  text-transform: none;
+}
+.gh-bookmarks-head button {
+  font: var(--fs-xs)/1 var(--font-latin);
+  text-transform: none;
+  letter-spacing: 0;
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: var(--sp-1);
+}
+.gh-bookmarks-head button:hover { color: var(--ink); }
+.gh-bookmarks-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--sp-2) 0;
+}
+.gh-bookmarks-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: var(--border-w) solid var(--rule);
+}
+.gh-bookmarks-list li:last-child { border-bottom: 0; }
+.gh-bookmarks-list a {
+  font: 600 var(--fs-sm)/1.3 var(--font-latin);
+  color: var(--ink);
+  text-decoration: none;
+}
+.gh-bookmarks-list a:hover,
+.gh-bookmarks-list a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.gh-bookmarks-list .gbk-remove {
+  background: none;
+  border: 0;
+  color: var(--ink-soft);
+  cursor: pointer;
+  font: var(--fs-sm)/1 var(--font-latin);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+}
+.gh-bookmarks-list .gbk-remove:hover {
+  background: var(--error);
+  color: var(--bg-elev);
+}
+.gh-bookmarks-empty {
+  padding: var(--sp-4) var(--sp-3);
+  color: var(--ink-soft);
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  text-align: center;
+}
+
+/* ── Global header responsive ────────────────────────────────── */
+/* Three breakpoints, each progressively more compact:
+ *   900px: hide the desktop nav (Roots/Concordance/About links
+ *          move to the slide-in drawer) — hamburger appears
+ *   720px: keep the drawer but compress padding
+ *   480px: tighter still — search input drops its placeholder hint
+ *
+ * The hamburger stays for the duration of all three. */
+@media (max-width: 900px) {
+  .gh-inner {
+    /* 5-col grid → 4-col grid: brand | search | actions */
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: "hamburger brand search actions";
+    column-gap: var(--sp-2);
+  }
+  .gh-hamburger { display: inline-flex; }
+  .gh-nav { display: none; }
+  /* Reveal mobile-only actions on narrow viewports (their counterparts
+   * in .gh-nav are hidden via the rule above). */
+  .gh-actions-mobile { display: flex; gap: var(--sp-1); }
+}
+
+@media (max-width: 720px) {
+  .gh-inner {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .gh-hamburger { padding: var(--sp-1); }
+  /* The search form's type-select may crowd the input. Hide it on
+   * phones — the search type is still settable from the search
+   * results page via the inline filter. */
+  .gh-search select { display: none; }
+}
+
+@media (max-width: 480px) {
+  .gh-inner { padding: var(--sp-2) var(--sp-2); }
+  .gh-search input { min-width: 4rem; font-size: var(--fs-sm); }
+  .gh-actions-mobile { gap: 0; }
+}
+
+/* ── Surah header ──────────────────────────────────────────── */
+/* Lives inside .page-surah so it inherits the same grid-column
+ * (3 / span 8) as the Quran article — no extra width rules needed.
+ * Sticky just below the global header. */
+.surah-header {
+  position: sticky;
+  top: var(--gh-height);
+  z-index: calc(var(--z-sticky) - 1);
+  background: var(--bg);
+  border-bottom: var(--border-w) solid var(--rule);
+  padding: var(--sp-3) 0;
+}
+/* Nav row: prev · name · next */
+.sh-nav-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: 0 0 var(--sp-2);
+}
+.sh-nav-left, .sh-nav-right {
+  display: flex;
+  gap: var(--sp-2);
+}
+.surah-title {
+  margin: 0;
+  font: 600 var(--fs-xl)/1 var(--font-latin);
+  display: flex;
+  gap: var(--sp-3);
+  align-items: baseline;
+  justify-content: center;
+}
+.surah-title-num { color: var(--accent); font: 600 var(--fs-md)/1 var(--font-latin); }
+.surah-title-name { font: 600 var(--fs-xl)/1 var(--font-arabic); }
+
+/* Surah metadata row — Latin name, revelation type, English
+ * descriptor. Sits between the title row and the control row.
+ * Distinguishes Meccan vs Medinan via the data-type attribute
+ * so we can tint the badge. */
+.sh-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--sp-3);
+  margin: var(--sp-1) 0;
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  color: var(--ink-muted);
+}
+/* When none of the metadata fields are populated (DB still has
+ * empty values for english_name etc.), hide the wrapper so it
+ * doesn't take up an empty band of vertical space. */
+.sh-meta:empty {
+  display: none;
+}
+.sh-meta-latin {
+  font-style: italic;
+}
+.sh-meta-rev {
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  padding: 1px var(--sp-2);
+  border-radius: 2px;
+  background: var(--word-hover-bg);
+  color: var(--accent);
+}
+.sh-meta-rev[data-type="Meccan"] {
+  background: oklch(50% 0.110 70 / 0.15);
+  color: oklch(40% 0.120 65);
+}
+.sh-meta-rev[data-type="Medinan"] {
+  background: oklch(48% 0.080 155 / 0.18);
+  color: oklch(35% 0.090 160);
+}
+.sh-meta-translation {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+
+/* Control row: search · font · line · trans */
+.sh-ctrl-row {
+  display: flex;
+  gap: var(--sp-4);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.sh-search input {
+  width: 100%;
+  min-width: 12rem;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+.sh-search input.is-error { border-color: var(--error); }
+.sh-controls { display: flex; gap: var(--sp-4); align-items: center; }
+.sh-control {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  font-size: var(--fs-sm);
+  color: var(--ink-muted);
+}
+.sh-control .sh-label {
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+}
+
+/* ── Custom range slider ──────────────────────────────────────── */
+/* Native range inputs look ugly in every browser. We strip the
+ * default appearance, then style the track and thumb ourselves for
+ * both WebKit (Chrome/Safari) and Firefox. The filled portion of
+ * the track is driven by the --fill custom property set by JS on
+ * every input event. */
+.sh-control input[type="range"] {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  width: 6rem;
+  height: 18px;       /* taller than the track itself for an easier click target */
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+  margin: 0;
+}
+/* Track — WebKit */
+.sh-control input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0% var(--fill, 0%),
+    var(--rule)    var(--fill, 0%) 100%
+  );
+}
+/* Thumb — WebKit */
+.sh-control input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: -4.5px;  /* center on the 3px track */
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.sh-control input[type="range"]:hover::-webkit-slider-thumb,
+.sh-control input[type="range"]:focus::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px var(--focus-ring-bg);
+}
+.sh-control input[type="range"]:focus-visible::-webkit-slider-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+/* Track — Firefox (uses ::-moz-range-progress for the filled portion) */
+.sh-control input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--rule);
+}
+.sh-control input[type="range"]::-moz-range-progress {
+  height: 3px;
+  border-radius: 1.5px;
+  background: var(--accent);
+}
+/* Thumb — Firefox */
+.sh-control input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--accent);
+  border: 2px solid var(--bg-elev);
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+.sh-control input[type="range"]:hover::-moz-range-thumb,
+.sh-control input[type="range"]:focus::-moz-range-thumb {
+  box-shadow: 0 0 0 4px var(--focus-ring-bg);
+}
+.sh-control input[type="range"]:focus-visible::-moz-range-thumb {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/* ── Live value display next to each slider ──────────────────── */
+/* Uses <output> which is associated with the input via the `for`
+ * attribute; `aria-live="polite"` announces changes to assistive
+ * tech. tabular-nums keeps the digit columns aligned so the
+ * layout doesn't jitter as the user drags. */
+.sh-control .sh-value {
+  /* Read-only value badge — visually distinct from inputs so users
+     don't try to click into it. Filled background with a subtle
+     pill shape and tabular numbers so digits don't jitter as the
+     user drags the slider. */
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: var(--ink-muted);
+  min-width: 3.2em;
+  text-align: center;
+  user-select: none;
+  background: var(--bg-sunken);
+  border: 0;
+  border-radius: 999px;
+  padding: 2px var(--sp-2);
+  line-height: 1.4;
+  cursor: default;
+}
+.sh-control .sh-value-unit {
+  color: var(--ink-soft);
+  margin-left: 0.15em;
+}
+
+.sh-nav { display: flex; gap: var(--sp-2); }
+.sh-prev, .sh-next { color: var(--ink); font: 600 var(--fs-sm)/1 var(--font-latin); padding: var(--sp-1) var(--sp-2); border-radius: var(--radius-sm); }
+.sh-prev.disabled, .sh-next.disabled { color: var(--ink-soft); pointer-events: none; }
+
+@media (max-width: 768px) {
+  .sh-row { grid-template-columns: 1fr; gap: var(--sp-2); }
+  .sh-controls { flex-wrap: wrap; }
+}
+
+/* ── Word tooltip ──────────────────────────────────────────── */
+/* Layout (top → bottom):
+ *   1. Word          (large Arabic, with tashkeel)
+ *   2. Root          (Arabic letters with spaces between)
+ *   3. Lemma         (bare stem, no diacritics)
+ *   4. Gloss         (combined English gloss)
+ *   5. POS · Function (small caps, bottom)
+ */
+.word-tooltip {
+  position: fixed;
+  z-index: var(--z-tooltip);
+  background: var(--tooltip-bg);
+  color: var(--ink);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-md);
+  padding: var(--sp-3) var(--sp-4);
+  font: var(--fs-sm)/1.4 var(--font-latin);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.10);
+  min-width: 12rem;
+  max-width: 26rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+.word-tooltip[data-state="visible"] { opacity: 1; }
+.word-tooltip[hidden] { display: none; }
+
+.word-tooltip .wt-loading { color: var(--ink-muted); margin: 0; font-style: italic; }
+.word-tooltip .wt-empty { color: var(--ink-soft); margin: 0; font-style: italic; }
+
+/* 1. Word — large, Uthmani, centered */
+.word-tooltip .wt-word {
+  font: 700 var(--fs-lg)/1.2 var(--font-arabic);
+  margin: 0 0 var(--sp-2);
+  text-align: center;
+  color: var(--ink);
+}
+
+/* 2. Root — Arabic + Buckwalter on same line */
+.word-tooltip .wt-root-line {
+  margin: var(--sp-2) 0;
+  display: flex;
+  gap: var(--sp-2);
+  align-items: baseline;
+  justify-content: center;
+}
+.word-tooltip .wt-root-ar {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--accent);
+}
+.word-tooltip .wt-root-bw {
+  font: var(--fs-sm)/1 var(--font-mono);
+  color: var(--ink-soft);
+}
+
+/* 3. Lemma — bare stem, centered */
+.word-tooltip .wt-lemma {
+  font: 600 var(--fs-md)/1 var(--font-arabic);
+  color: var(--ink);
+  margin: var(--sp-2) 0;
+  text-align: center;
+}
+
+/* 4. Gloss — after separator */
+.word-tooltip .wt-gloss { color: var(--ink); margin: var(--sp-2) 0; }
+
+/* 5. Morphology Tags */
+.word-tooltip .wt-tags {
+  margin: var(--sp-2) 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.word-tooltip .wt-tag {
+  font-size: var(--fs-xs);
+  background: var(--bg-elev);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--sp-2);
+  color: var(--ink-muted);
+}
+
+/* 6. Grammatical Tags */
+.word-tooltip .wt-gram { margin: var(--sp-2) 0; color: var(--ink-soft); font-size: var(--fs-xs); }
+.word-tooltip .wt-gram-tags { color: var(--ink-muted); }
+
+/* Separator lines */
+.word-tooltip .wt-sep {
+  border: 0;
+  border-top: var(--border-w) solid var(--rule);
+  margin: var(--sp-2) 0;
+}
+
+/* Filter form apply button — used by /roots and /root/detailed.
+ * Visual weight is intentionally low so the auto-submit-on-change
+ * behavior is the primary interaction; the button is the keyboard /
+ * a11y fallback for users who don't trigger change events. */
+.filter-apply {
+  font: 500 var(--fs-sm)/1 var(--font-latin);
+  background: transparent;
+  color: var(--ink-muted);
+  border: var(--border-w) solid var(--rule);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-1) var(--sp-3);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out),
+              color var(--dur-fast) var(--ease-out);
+}
+.filter-apply:hover {
+  background: var(--bg-sunken);
+  color: var(--ink);
+}
+.filter-apply:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

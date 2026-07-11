@@ -1,117 +1,39 @@
 #!/usr/bin/env python3
 """
-Validate root_meaning.csv against corpus-roots.json.
+Validate meanings-roots-ai.jsonl against corpus-roots.json.
 
 Eight integrity checks:
-  1. No missing roots — every corpus-roots.json root has a row in root_meaning.csv
-  2. No empty full_response — zero rows with empty JSON
-  3. full_response validity — every full_response is parseable JSON with correct schema
+  1. No missing roots — every corpus-roots.json root has an entry in meanings-roots-ai.jsonl
+  2. No empty en_detailed — zero entries with empty en_detailed
+  3. JSONL validity — every line is parseable JSON with required meaning fields
   4. No duplicate roots — no duplicate root values
   5. id uniqueness — no duplicate id values
   6. POS populated — no null/empty pos values
-  7. Orphan rows detected — roots in CSV but not in corpus-roots.json (informational)
-  8. Missing field strings — completely empty field columns (empty arrays are OK)
+  7. Orphan roots detected — roots in JSONL but not in corpus-roots.json (informational)
+  8. Occurrence count mismatch — corpus-roots.json vs JSONL occurrence counts
 """
 
-import csv
 import json
 import os
 import sys
+from collections import Counter
 
-CSV_PATH = os.path.join(os.path.dirname(__file__), '..', 'root_meaning.csv')
+JSONL_PATH = os.path.join(os.path.dirname(__file__), '..', 'meanings-roots-ai.jsonl')
 CORPUS_PATH = os.path.join(os.path.dirname(__file__), '..', 'corpus-roots.json')
 
-FR_SCHEMA_KEYS = {'general_meaning', 'shades_of_meaning', 'hadith_examples',
-                  'classical_sources', 'idioms_customs', 'word_by_word_shades'}
-
-def check_no_missing_roots(corpus_roots, csv_roots):
-    """Check 1: Every corpus-roots.json root has a corresponding row in root_meaning.csv."""
-    missing = sorted(set(corpus_roots.keys()) - csv_roots)
-    # Exclude quadriliteral roots
-    # Determine quadrilateral by length > 3 AND not in corpus_roots (triliteral roots only)
-    # Actually, corpus_roots has only triliteral roots (3 letters), so all its keys are valid
-    # Issues: a root that is key in corpus_roots.json but missing from root_meaning.csv
-    # But some roots in corpus_roots might also be quadriliteral? No - corpus-roots only has triliteral roots (by design)
-    return missing
+REQUIRED_MEANING_KEYS = {'en_short', 'en', 'en_detailed', 'trilateral_meaning', 'ar_definition'}
 
 
-def check_no_empty_full_response(rows):
-    """Check 2: Zero rows with empty full_response."""
-    return [r for r in rows if not r['full_response'].strip()]
-
-
-def check_full_response_validity(rows):
-    """Check 3: Every full_response is parseable JSON with correct schema."""
-    bad = []
-    for r in rows:
-        fr_raw = r['full_response'].strip()
-        if not fr_raw:
-            bad.append((r['id'], r['root'], 'empty'))
-            continue
-        try:
-            fr = json.loads(fr_raw)
-        except json.JSONDecodeError as e:
-            bad.append((r['id'], r['root'], f'invalid JSON: {e}'))
-            continue
-        if not isinstance(fr, dict):
-            bad.append((r['id'], r['root'], 'not a dict'))
-            continue
-        missing_keys = FR_SCHEMA_KEYS - set(fr.keys())
-        if missing_keys:
-            bad.append((r['id'], r['root'], f'missing keys: {missing_keys}'))
-            continue
-        # Check general_meaning is a string
-        if not isinstance(fr.get('general_meaning'), str):
-            bad.append((r['id'], r['root'], 'general_meaning not a string'))
-            continue
-        # Check array fields are lists
-        for key in ['shades_of_meaning', 'hadith_examples', 'classical_sources', 'idioms_customs', 'word_by_word_shades']:
-            if not isinstance(fr.get(key), list):
-                bad.append((r['id'], r['root'], f'{key} not a list'))
+def load_jsonl(path):
+    """Load JSONL file into list of dicts."""
+    entries = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
                 continue
-    return bad
-
-
-def check_no_duplicate_roots(rows):
-    """Check 4: No duplicate root values."""
-    from collections import Counter
-    root_counts = Counter(r['root'] for r in rows)
-    return {k: v for k, v in root_counts.items() if v > 1}
-
-
-def check_id_uniqueness(rows):
-    """Check 5: No duplicate id values."""
-    from collections import Counter
-    id_counts = Counter(r['id'] for r in rows)
-    return {k: v for k, v in id_counts.items() if v > 1}
-
-
-def check_pos_populated(rows):
-    """Check 6: No null/empty pos values."""
-    return [r for r in rows if not r.get('pos', '').strip()]
-
-
-def check_no_orphans(corpus_roots, rows):
-    """Check 7: Detect roots in CSV but not in corpus-roots.json (informational)."""
-    corpus_keys = set(corpus_roots.keys())
-    orphans = []
-    for r in rows:
-        root = r['root']
-        if root not in corpus_keys:
-            orphans.append((r['id'], root))
-    return orphans
-
-
-def check_fields_nonempty(rows):
-    """Check 8: Field columns are not completely empty strings (empty arrays are OK)."""
-    missing = []
-    for r in rows:
-        for col in ['shades_of_meaning', 'hadith_examples', 'classical_sources',
-                     'idioms_customs', 'word_by_word_shades']:
-            raw = r[col].strip()
-            if not raw:
-                missing.append((r['id'], r['root'], col, 'empty string'))
-    return missing
+            entries.append(json.loads(line))
+    return entries
 
 
 def load_json(path):
@@ -119,65 +41,116 @@ def load_json(path):
         return json.load(f)
 
 
+def check_no_missing_roots(corpus_roots, jsonl_root_set):
+    """Check 1: Every corpus-roots.json root has an entry in meanings-roots-ai.jsonl."""
+    return sorted(set(corpus_roots.keys()) - jsonl_root_set)
+
+
+def check_no_empty_en_detailed(entries):
+    """Check 2: Zero entries with empty en_detailed."""
+    return [(e['id'], e['root']) for e in entries
+            if not e.get('meaning', {}).get('en_detailed', '').strip()]
+
+
+def check_meaning_field_completeness(entries):
+    """Check 3: Every entry has all required meaning fields (non-empty)."""
+    bad = []
+    for e in entries:
+        meaning = e.get('meaning', {})
+        for key in REQUIRED_MEANING_KEYS:
+            if not meaning.get(key, '').strip():
+                bad.append((e['id'], e['root'], f'missing/empty meaning.{key}'))
+    return bad
+
+
+def check_no_duplicate_roots(entries):
+    """Check 4: No duplicate root values."""
+    root_counts = Counter(e['root'] for e in entries)
+    return {k: v for k, v in root_counts.items() if v > 1}
+
+
+def check_id_uniqueness(entries):
+    """Check 5: No duplicate id values."""
+    id_counts = Counter(e['id'] for e in entries)
+    return {k: v for k, v in id_counts.items() if v > 1}
+
+
+def check_pos_populated(entries):
+    """Check 6: No null/empty pos values."""
+    return [(e['id'], e['root']) for e in entries if not e.get('pos', '').strip()]
+
+
+def check_no_orphans(corpus_roots, entries):
+    """Check 7: Detect roots in JSONL but not in corpus-roots.json (informational)."""
+    corpus_keys = set(corpus_roots.keys())
+    return [(e['id'], e['root']) for e in entries if e['root'] not in corpus_keys]
+
+
+def check_occurrence_counts(corpus_roots, entries):
+    """Check 8: Cross-reference occurrence counts between corpus-roots.json and JSONL."""
+    mismatches = []
+    corpus_keys = set(corpus_roots.keys())
+    for e in entries:
+        if e['root'] not in corpus_keys:
+            continue
+        corpus_count = len(corpus_roots[e['root']])
+        jsonl_count = e.get('occurrences_quran', 0)
+        if corpus_count != jsonl_count:
+            mismatches.append((e['id'], e['root'], corpus_count, jsonl_count))
+    return mismatches
+
+
 def main():
-    csv_path = os.path.abspath(CSV_PATH)
+    jsonl_path = os.path.abspath(JSONL_PATH)
     corpus_path = os.path.abspath(CORPUS_PATH)
 
-    print(f"CSV file:    {csv_path}")
+    print(f"JSONL file:  {jsonl_path}")
     print(f"Corpus file: {corpus_path}")
     print()
 
     # Load data
     corpus_roots = load_json(corpus_path)
-    with open(csv_path, 'r', newline='', encoding='utf-8') as f:
-        rows = list(csv.DictReader(f))
+    entries = load_jsonl(jsonl_path)
 
-    csv_root_set = set(r['root'] for r in rows)
-    csv_root_count = len(csv_root_set)
+    jsonl_root_set = set(e['root'] for e in entries)
 
-    print(f"corpus-roots.json roots: {len(corpus_roots)}")
-    print(f"root_meaning.csv rows:   {len(rows)}")
-    print(f"Unique roots in CSV:     {csv_root_count}")
+    print(f"corpus-roots.json roots:        {len(corpus_roots)}")
+    print(f"meanings-roots-ai.jsonl entries: {len(entries)}")
+    print(f"Unique roots in JSONL:           {len(jsonl_root_set)}")
     print()
 
-    checks = []
     all_pass = True
 
     # Check 1: No missing roots
-    missing = check_no_missing_roots(corpus_roots, csv_root_set)
+    missing = check_no_missing_roots(corpus_roots, jsonl_root_set)
     if missing:
-        print(f"FAIL Check 1 — Missing roots: {len(missing)}")
-        for r in missing:
-            print(f"  {r}")
+        print(f"FAIL Check 1 — Missing roots ({len(missing)}): {', '.join(missing[:20])}")
         all_pass = False
     else:
         print("PASS Check 1 — No missing roots")
-    checks.append(('no-missing-roots', len(missing) == 0))
 
-    # Check 2: No empty full_response
-    empty_fr = check_no_empty_full_response(rows)
-    if empty_fr:
-        print(f"FAIL Check 2 — Empty full_response: {len(empty_fr)}")
-        for r in empty_fr[:5]:
-            print(f"  id={r['id']}, root={r['root']}")
+    # Check 2: No empty en_detailed
+    empty_ed = check_no_empty_en_detailed(entries)
+    if empty_ed:
+        print(f"FAIL Check 2 — Empty en_detailed: {len(empty_ed)}")
+        for id_, root in empty_ed[:10]:
+            print(f"  id={id_}, root={root}")
         all_pass = False
     else:
-        print("PASS Check 2 — No empty full_response")
-    checks.append(('no-empty-full-response', len(empty_fr) == 0))
+        print("PASS Check 2 — No empty en_detailed")
 
-    # Check 3: full_response validity
-    bad_fr = check_full_response_validity(rows)
+    # Check 3: Meaning field completeness
+    bad_fr = check_meaning_field_completeness(entries)
     if bad_fr:
-        print(f"FAIL Check 3 — Invalid full_response: {len(bad_fr)}")
-        for r in bad_fr[:5]:
-            print(f"  id={r[0]}, root={r[1]}: {r[2]}")
+        print(f"FAIL Check 3 — Missing meaning fields: {len(bad_fr)}")
+        for id_, root, msg in bad_fr[:10]:
+            print(f"  id={id_}, root={root}: {msg}")
         all_pass = False
     else:
-        print("PASS Check 3 — All full_response valid")
-    checks.append(('full-response-valid', len(bad_fr) == 0))
+        print("PASS Check 3 — All required meaning fields present")
 
     # Check 4: No duplicate roots
-    dups = check_no_duplicate_roots(rows)
+    dups = check_no_duplicate_roots(entries)
     if dups:
         print(f"FAIL Check 4 — Duplicate roots: {len(dups)}")
         for k, v in list(dups.items())[:5]:
@@ -185,59 +158,56 @@ def main():
         all_pass = False
     else:
         print("PASS Check 4 — No duplicate roots")
-    checks.append(('no-duplicate-roots', len(dups) == 0))
 
     # Check 5: id uniqueness
-    dup_ids = check_id_uniqueness(rows)
+    dup_ids = check_id_uniqueness(entries)
     if dup_ids:
         print(f"FAIL Check 5 — Duplicate ids: {len(dup_ids)}")
         for k, v in list(dup_ids.items())[:5]:
-            print(f"  id={k}: {v} rows")
+            print(f"  id={k}: {v} entries")
         all_pass = False
     else:
         print("PASS Check 5 — All ids unique")
-    checks.append(('id-uniqueness', len(dup_ids) == 0))
 
     # Check 6: POS populated
-    no_pos = check_pos_populated(rows)
+    no_pos = check_pos_populated(entries)
     if no_pos:
         print(f"FAIL Check 6 — Empty POS: {len(no_pos)}")
-        for r in no_pos[:5]:
-            print(f"  id={r['id']}, root={r['root']}")
+        for id_, root in no_pos[:10]:
+            print(f"  id={id_}, root={root}")
         all_pass = False
     else:
         print("PASS Check 6 — All POS populated")
-    checks.append(('pos-populated', len(no_pos) == 0))
 
     # Check 7: Orphan detection (informational)
-    orphans = check_no_orphans(corpus_roots, rows)
+    orphans = check_no_orphans(corpus_roots, entries)
     if orphans:
-        print(f"INFO Check 7 — Orphan rows (in CSV, not in corpus-roots.json): {len(orphans)}")
-        for r in orphans:
-            print(f"  id={r[0]}, root={r[1]}")
-        # This is informational — don't fail
+        print(f"INFO Check 7 — Orphan roots (in JSONL, not in corpus-roots.json): {len(orphans)}")
+        for id_, root in orphans[:10]:
+            print(f"  id={id_}, root={root}")
     else:
-        print("PASS Check 7 — No orphan rows")
-    checks.append(('no-orphans', True))
+        print("PASS Check 7 — No orphan roots")
 
-    # Check 8: Missing field strings (completely empty, not empty arrays)
-    missing_fields = check_fields_nonempty(rows)
-    if missing_fields:
-        print(f"INFO Check 8 — Completely empty field strings: {len(missing_fields)}")
-        for r in missing_fields[:10]:
-            print(f"  id={r[0]}, root={r[1]}, col={r[2]}: {r[3]}")
-        # These are fields with completely empty strings (not even an empty array)
-        # This is informational
+    # Check 8: Occurrence count mismatches
+    mismatches = check_occurrence_counts(corpus_roots, entries)
+    if mismatches:
+        print(f"FAIL Check 8 — Occurrence count mismatches: {len(mismatches)}")
+        for id_, root, cc, jc in sorted(mismatches, key=lambda x: abs(x[2]-x[3]), reverse=True)[:15]:
+            print(f"  id={id_}, root={root}: corpus={cc}, JSONL={jc}, diff={abs(cc-jc)}")
+        all_pass = False
     else:
-        print("PASS Check 8 — All field columns have content")
-    checks.append(('fields-nonempty', True))
+        print("PASS Check 8 — All occurrence counts match")
 
     print()
     if all_pass:
-        print("✓ ALL 8 CHECKS PASSED")
+        print("\u2713 ALL 8 CHECKS PASSED")
         return 0
     else:
-        print(f"✗ {sum(1 for _, ok in checks if not ok)} CHECK(S) FAILED")
+        failed = sum(1 for label in [
+            bool(missing), bool(empty_ed), bool(bad_fr),
+            bool(dups), bool(dup_ids), bool(no_pos), False, bool(mismatches)
+        ] if label)
+        print(f"\u2717 {failed} CHECK(S) FAILED")
         return 1
 
 
